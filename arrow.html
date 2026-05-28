@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>Arrow Op</title>
+  <style>
+    /* ------------------------------------------------------------------- *
+     * Possession arrow operator console (FIBA §9).
+     *
+     * Top half: gigantic arrow indicator matching the /possession display
+     *           (no per-device invert here — the operator sees the raw
+     *           server direction so what they press is what they see).
+     * Bottom half: three big direction buttons + a swap.
+     *
+     * Optimised for a landscape ~10–12" tablet.
+     * --------------------------------------------------------------------*/
+    :root {
+      --bg: #0a0a0a;
+      --panel: #161616;
+      --panel-2: #1f1f1f;
+      --panel-3: #2a2a2a;
+      --border: #2a2a2a;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --red: #ff2424;
+      --red-glow: rgba(255,36,36,0.55);
+      --red-2: #ff5247;
+      --green: #2ea043;
+      --green-2: #46c563;
+      --dim: #333;
+      --accent: #ff8c1a;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; padding: 0; height: 100%; overflow: hidden;
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   Oxygen, Ubuntu, sans-serif;
+      touch-action: manipulation;
+      -webkit-user-select: none; user-select: none;
+    }
+
+    .app { display: grid;
+           grid-template-rows: minmax(0, 60fr) minmax(0, 40fr);
+           height: 100vh; gap: 6px; padding: 6px; }
+
+    /* ---- top: indicator ---- */
+    .top {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 14px; padding: 12px 18px;
+      display: flex; flex-direction: column; min-height: 0;
+      position: relative; overflow: hidden;
+    }
+    .top h2 {
+      margin: 0 0 6px; font-size: 12px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 2px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .dir-label {
+      font-weight: 900; letter-spacing: 3px; font-size: 14px;
+      padding: 3px 12px; border-radius: 999px;
+      background: var(--panel-2); color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .dir-label.left, .dir-label.right { color: #fff; background: var(--red);
+                                        border-color: var(--red-2);
+                                        box-shadow: 0 0 12px -2px var(--red-glow); }
+    .dir-label.off { color: var(--muted); }
+
+    .arrow-stage {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      position: relative; overflow: hidden;
+    }
+    .arrow {
+      width: 92%; height: 90%;
+      filter: drop-shadow(0 0 24px var(--red-glow))
+              drop-shadow(0 0 56px var(--red-glow));
+      transition: transform 0.22s cubic-bezier(.22,.61,.36,1),
+                  opacity 0.18s ease;
+    }
+    .arrow path { fill: var(--red); }
+    .arrow.left  { transform: scaleX(1); }
+    .arrow.right { transform: scaleX(-1); }
+    .arrow.off   { opacity: 0; }
+
+    .off-state {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      color: #444; font-size: clamp(40px, 7vw, 96px); letter-spacing: 8px;
+      text-transform: uppercase; pointer-events: none;
+      opacity: 0; transition: opacity 0.2s ease;
+      font-weight: 900;
+    }
+    .off-state.shown { opacity: 1; }
+
+    /* ---- bottom: button grid ---- */
+    .bottom {
+      display: grid;
+      grid-template-columns: 1fr 0.7fr 1fr;
+      gap: 6px; min-height: 0;
+    }
+    .bottom > .swap {
+      grid-column: 1 / -1;
+    }
+    .bottom.two-row {
+      grid-template-rows: 1fr 0.55fr;
+    }
+
+    button {
+      background: var(--panel-2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 14px;
+      padding: 0; font-size: 32px; font-weight: 900;
+      cursor: pointer; font-family: inherit;
+      letter-spacing: 4px; min-height: 60px;
+      transition: background .06s, transform .04s, box-shadow .06s;
+      display: flex; align-items: center; justify-content: center; gap: 12px;
+    }
+    button:active { transform: translateY(2px); }
+    button .legend { font-size: 11px; color: #ffffff80; padding: 2px 6px;
+                     letter-spacing: 1.5px; text-transform: uppercase; }
+    button.dir   { background: #1a0606; border-color: #4a0c0c; color: var(--red);
+                   font-size: clamp(40px, 5vw, 64px); }
+    button.dir.armed { background: var(--red); color: #fff; border-color: var(--red-2);
+                       box-shadow: 0 0 24px -4px var(--red-glow); }
+    button.off-btn { background: var(--panel-3); color: var(--muted);
+                     font-size: clamp(28px, 3.5vw, 44px); }
+    button.off-btn.armed { background: #444; color: #fff; border-color: var(--muted); }
+    button.swap  { background: #2a1d05; border-color: var(--accent);
+                   color: var(--accent); font-size: clamp(24px, 3vw, 36px);
+                   letter-spacing: 6px; }
+    button.swap:active { background: var(--accent); color: #111; }
+    button[disabled] { opacity: 0.4; cursor: not-allowed; }
+
+    .status-strip {
+      position: fixed; bottom: 4px; left: 6px; right: 6px;
+      display: flex; gap: 14px; font-size: 10px; color: var(--muted);
+      pointer-events: none; opacity: 0.7;
+    }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ===== TOP: arrow indicator ===== -->
+  <div class="top">
+    <h2>
+      <span>Alternating possession (FIBA §9)</span>
+      <span id="dir-label" class="dir-label off">OFF</span>
+    </h2>
+    <div class="arrow-stage">
+      <!-- Same arrow shape as /possession so the operator sees what the
+           court display shows. The display has a per-device invert toggle;
+           this view never inverts (the operator picks raw direction). -->
+      <svg id="arrow" class="arrow off"
+           viewBox="0 0 100 40" xmlns="http://www.w3.org/2000/svg"
+           preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        <path d="M 4,20 L 38,2 L 38,13 L 98,13 L 98,27 L 38,27 L 38,38 Z" />
+      </svg>
+      <div id="off-state" class="off-state">— OFF —</div>
+    </div>
+  </div>
+
+  <!-- ===== BOTTOM: controls ===== -->
+  <div class="bottom two-row">
+    <button id="btn-left"  class="dir">
+      ◀ LEFT <span class="legend">(←)</span>
+    </button>
+    <button id="btn-off"   class="off-btn">
+      OFF <span class="legend">(O)</span>
+    </button>
+    <button id="btn-right" class="dir">
+      RIGHT ▶ <span class="legend">(→)</span>
+    </button>
+    <button id="btn-swap"  class="swap">
+      ⇄ SWAP DIRECTION <span class="legend">(Space)</span>
+    </button>
+  </div>
+</div>
+
+<div class="status-strip">
+  <span id="ws-status">connecting…</span>
+  <span id="rtt-status"></span>
+  <span style="margin-left:auto">/arrow — possession arrow operator</span>
+</div>
+
+<script src="/common.js"></script>
+<script>
+(() => {
+  "use strict";
+
+  const $ = (id) => document.getElementById(id);
+  const arrowEl  = $("arrow");
+  const offEl    = $("off-state");
+  const labelEl  = $("dir-label");
+  const btnLeft  = $("btn-left");
+  const btnRight = $("btn-right");
+  const btnOff   = $("btn-off");
+  const btnSwap  = $("btn-swap");
+  const wsStatusEl  = $("ws-status");
+  const rttStatusEl = $("rtt-status");
+
+  function render() {
+    const s = Scoreboard.getState();
+    const dir = s ? s.possession : "off";
+
+    arrowEl.classList.remove("left", "right", "off");
+    arrowEl.classList.add(dir);
+    offEl.classList.toggle("shown", dir === "off");
+
+    labelEl.classList.remove("left", "right", "off");
+    labelEl.classList.add(dir);
+    labelEl.textContent = dir === "left" ? "◀ LEFT"
+                        : dir === "right" ? "RIGHT ▶"
+                        : "— OFF —";
+
+    btnLeft .classList.toggle("armed", dir === "left");
+    btnRight.classList.toggle("armed", dir === "right");
+    btnOff  .classList.toggle("armed", dir === "off");
+    // Swap is only meaningful when a direction is set.
+    btnSwap.disabled = dir === "off";
+
+    requestAnimationFrame(render);
+  }
+
+  // ---- buttons ----
+  btnLeft .addEventListener("click", () => Scoreboard.sendCommand("set_possession", { direction: "left"  }));
+  btnRight.addEventListener("click", () => Scoreboard.sendCommand("set_possession", { direction: "right" }));
+  btnOff  .addEventListener("click", () => Scoreboard.sendCommand("set_possession", { direction: "off"   }));
+  btnSwap .addEventListener("click", () => {
+    const s = Scoreboard.getState();
+    if (!s || s.possession === "off") return;
+    // Server's toggle_possession flips left<->right (ignores "off"); we
+    // already gated above, so it's safe.
+    Scoreboard.sendCommand("toggle_possession");
+  });
+
+  // ---- keyboard ----
+  document.addEventListener("keydown", (e) => {
+    if (e.repeat) return;
+    if (e.target && e.target.tagName === "INPUT") return;
+    const k = e.key;
+    if      (k === "ArrowLeft")  Scoreboard.sendCommand("set_possession", { direction: "left"  });
+    else if (k === "ArrowRight") Scoreboard.sendCommand("set_possession", { direction: "right" });
+    else if (k === "o" || k === "O" || k === "Escape")
+                                 Scoreboard.sendCommand("set_possession", { direction: "off"   });
+    else if (e.code === "Space") { e.preventDefault(); Scoreboard.sendCommand("toggle_possession"); }
+  });
+
+  // ---- status display ----
+  Scoreboard.onStatus(({ status }) => {
+    wsStatusEl.textContent = status === "open" ? "● live"
+                           : status === "connecting" ? "connecting…"
+                           : "● disconnected";
+    wsStatusEl.style.color = status === "open" ? "var(--green-2)"
+                            : status === "connecting" ? "var(--muted)"
+                            : "var(--red-2)";
+  });
+  setInterval(() => {
+    const rtt = Scoreboard.getBestRttMs();
+    rttStatusEl.textContent = isFinite(rtt) ? `RTT ${rtt.toFixed(0)}ms` : "";
+  }, 1000);
+
+  Scoreboard.connect();
+  requestAnimationFrame(render);
+})();
+</script>
+</body>
+</html>

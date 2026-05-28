@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Player Roster</title>
+  <style>
+    /* Standalone single-team player roster, intended to occupy a full
+       dedicated display alongside the centre-only /scoreboard view.
+
+       URL parameters:
+         ?team=home|away                       (required; default home)
+         ?name=off|last|fi-last|last-fi|first-last     (default last-fi)
+         ?numbers=on|off                       (default on)
+         ?fouls=off|numeric|dots               (default dots)
+         ?points=on|off                        (default on)
+    */
+    :root {
+      --bg: #000;
+      --amber: #ff8c1a;
+      --red: #ff3030;
+      --green: #2ea043;
+      --muted: #555;
+      --dim: #1a1a1a;
+      --border: #2a2a2a;
+      --white: #fff;
+      --roster-cols: 4ch 1fr auto 4ch;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; background: var(--bg);
+                 color: var(--white); overflow: hidden;
+                 font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                 font-variant-numeric: tabular-nums; }
+
+    .stage {
+      display: grid;
+      grid-template-rows: auto auto auto 1fr auto;
+      gap: 1.5vh;
+      padding: 2vh 3vw 3vh;
+      width: 100vw; height: 100vh;
+    }
+
+    /* ---- Header (team name + score + period) ---- */
+    .head-row {
+      display: grid; grid-template-columns: 1fr auto 1fr;
+      gap: 2vw; align-items: center;
+    }
+    .team-name {
+      font-size: 8vh; font-weight: 900; color: var(--white);
+      letter-spacing: 0.05em; line-height: 1; text-align: left;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .period-tag {
+      font-size: 3vh; color: var(--muted);
+      letter-spacing: 0.3em; text-transform: uppercase;
+      text-align: center;
+    }
+    .team-score {
+      font-size: 9vh; font-weight: 900; color: var(--red);
+      line-height: 1; text-align: right;
+      text-shadow: 0 0 14px rgba(255,48,48,0.5);
+    }
+
+    /* ---- Roster ---- */
+    .roster-head, .roster-row {
+      display: grid;
+      grid-template-columns: var(--roster-cols);
+      gap: 2vw;
+      align-items: center;
+    }
+    .roster-head {
+      color: var(--muted);
+      font-size: 2vh;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      padding: 0.8vh 1.5vw;
+      border-bottom: 2px solid var(--border);
+    }
+    .roster-head .num   { text-align: right; color: var(--muted); }
+    .roster-head .name  { text-align: left;  color: var(--muted); }
+    .roster-head .fouls { text-align: center; color: var(--muted); }
+    .roster-head .pts   { text-align: right; color: var(--muted); }
+
+    .roster-body { display: flex; flex-direction: column;
+                   justify-content: flex-start; overflow: hidden; }
+    .roster-row {
+      padding: 0.9vh 1.5vw;
+      border-bottom: 1px solid var(--dim);
+      min-height: 5.5vh;
+    }
+    .roster-row.not-played { opacity: 0.35; }
+
+    .roster-row .num {
+      color: var(--white); font-weight: 700;
+      font-size: 4.5vh; text-align: right;
+    }
+    .roster-row .name {
+      color: var(--white); font-size: 4.5vh;
+      text-transform: uppercase; letter-spacing: 0.04em;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .roster-row .foul-dots {
+      display: flex; gap: 0.5vw; justify-content: center;
+    }
+    .roster-row .foul-dots .d {
+      width: 2.8vh; height: 2.8vh; border-radius: 50%;
+      background: transparent; border: 1px solid var(--border);
+    }
+    .roster-row .foul-dots .d.on        { background: var(--green); border-color: var(--green); }
+    .roster-row .foul-dots .d.on.fifth  { background: var(--red);   border-color: var(--red); }
+    .roster-row .foul-num {
+      color: var(--white); font-size: 4.5vh;
+      font-weight: 700; text-align: center;
+    }
+    .roster-row .foul-num.f4 { color: var(--amber); }
+    .roster-row .foul-num.f5 { color: var(--red); }
+    .roster-row .pts {
+      color: var(--red); font-size: 4.5vh; font-weight: 800;
+      text-align: right;
+      text-shadow: 0 0 6px rgba(255,48,48,0.4);
+    }
+
+    /* ---- Footer ---- */
+    .bottom {
+      display: flex; justify-content: space-between;
+      font-size: 1.5vh; color: var(--muted);
+    }
+    .conn-dot { display: inline-block; width: 1.1vh; height: 1.1vh;
+                border-radius: 50%; background: var(--muted);
+                margin-right: 0.6vh; vertical-align: middle; }
+    .conn-dot.ok  { background: var(--green); }
+    .conn-dot.bad { background: var(--red); }
+  </style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="head-row">
+    <div class="team-name"  id="team-name">TEAM</div>
+    <div class="period-tag" id="period-tag">PERIOD</div>
+    <div class="team-score" id="team-score">0</div>
+  </div>
+
+  <div class="roster-head" id="roster-head"></div>
+  <div></div> <!-- spacer so head sits flush with first row -->
+  <div class="roster-body" id="roster"></div>
+
+  <div class="bottom">
+    <span><span class="conn-dot" id="conn-dot"></span><span id="conn-text">…</span></span>
+    <span id="latency">—</span>
+  </div>
+</div>
+
+<script src="/common.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+
+// -------- URL configuration --------
+const params = new URLSearchParams(location.search);
+const TEAM = (params.get("team") || "home").toLowerCase() === "away" ? "away" : "home";
+
+const CFG = {
+  name:    (params.get("name")    || "last-fi").toLowerCase(),
+  numbers: (params.get("numbers") || "on").toLowerCase() !== "off",
+  fouls:   (params.get("fouls")   || "dots").toLowerCase(),   // off|numeric|dots
+  points:  (params.get("points")  || "on").toLowerCase() !== "off",
+};
+
+// -------- Column layout (shared header + rows) --------
+function buildCols() {
+  const cols = [];
+  if (CFG.numbers)         cols.push("4ch");
+  if (CFG.name !== "off")  cols.push("1fr");
+  if (CFG.fouls !== "off") cols.push(CFG.fouls === "dots" ? "20vh" : "5ch");
+  if (CFG.points)          cols.push("4ch");
+  return cols.join(" ");
+}
+document.documentElement.style.setProperty("--roster-cols", buildCols());
+
+// -------- Header --------
+function buildHeader() {
+  const head = $("roster-head");
+  head.innerHTML = "";
+  if (CFG.numbers)        head.appendChild(headerCell("num",   "#"));
+  if (CFG.name !== "off") head.appendChild(headerCell("name",  "Player"));
+  if (CFG.fouls !== "off")head.appendChild(headerCell("fouls", "Fouls"));
+  if (CFG.points)         head.appendChild(headerCell("pts",   "Pts"));
+}
+function headerCell(cls, txt) {
+  const e = document.createElement("span"); e.className = cls; e.textContent = txt; return e;
+}
+buildHeader();
+
+// -------- Name formatting --------
+function formatPlayerName(full) {
+  if (CFG.name === "off" || !full) return "";
+  const parts = String(full).trim().split(/\s+/);
+  if (parts.length === 0) return "";
+  const last = parts[parts.length - 1];
+  const first = parts.length > 1 ? parts[0] : "";
+  const init = first ? first[0].toUpperCase() + "." : "";
+  switch (CFG.name) {
+    case "last":       return last;
+    case "fi-last":    return init ? `${init} ${last}` : last;
+    case "last-fi":    return init ? `${last}, ${init}` : last;
+    case "first-last": return first ? `${first} ${last}` : last;
+    default:           return last;
+  }
+}
+
+// -------- Roster row --------
+function rosterRowEl(p) {
+  const row = document.createElement("div");
+  row.className = "roster-row" + (p.played === false ? " not-played" : "");
+
+  if (CFG.numbers) {
+    const e = document.createElement("div"); e.className = "num";
+    e.textContent = p.number || "";
+    row.appendChild(e);
+  }
+  if (CFG.name !== "off") {
+    const e = document.createElement("div"); e.className = "name";
+    e.textContent = formatPlayerName(p.name);
+    row.appendChild(e);
+  }
+  if (CFG.fouls === "numeric") {
+    const e = document.createElement("div");
+    e.className = "foul-num" + (p.fouls >= 5 ? " f5" : p.fouls === 4 ? " f4" : "");
+    e.textContent = (p.played === false) ? "" : String(p.fouls);
+    row.appendChild(e);
+  } else if (CFG.fouls === "dots") {
+    const e = document.createElement("div"); e.className = "foul-dots";
+    if (p.played !== false) {
+      for (let i = 0; i < 5; i++) {
+        const d = document.createElement("div"); d.className = "d";
+        if (p.fouls > i) {
+          d.classList.add("on");
+          if (i === 4) d.classList.add("fifth");
+        }
+        e.appendChild(d);
+      }
+    }
+    row.appendChild(e);
+  }
+  if (CFG.points) {
+    const e = document.createElement("div"); e.className = "pts";
+    e.textContent = (p.played === false) ? "" : String(p.points);
+    row.appendChild(e);
+  }
+  return row;
+}
+
+// -------- Apply state --------
+function applyState(s) {
+  const t = s[TEAM];
+  $("team-name").textContent  = (t.name || TEAM).toUpperCase();
+  $("team-score").textContent = t.score;
+  $("period-tag").textContent = s.period_name || "—";
+
+  const root = $("roster");
+  root.innerHTML = "";
+  for (const p of (t.players || [])) root.appendChild(rosterRowEl(p));
+}
+Scoreboard.onState(applyState);
+
+// -------- Status + fullscreen --------
+Scoreboard.onStatus((e) => {
+  const dot = $("conn-dot"), txt = $("conn-text");
+  dot.className = "conn-dot";
+  if (e.status === "open") { dot.classList.add("ok"); txt.textContent = "live"; }
+  else if (e.status === "closed") { dot.classList.add("bad"); txt.textContent = "offline"; }
+  else { txt.textContent = e.status; }
+});
+setInterval(() => {
+  const rtt = Scoreboard.getBestRttMs();
+  $("latency").textContent = isFinite(rtt) ? `rtt ${rtt.toFixed(1)}ms` : "—";
+}, 500);
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "f" || e.key === "F") {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+    else document.exitFullscreen();
+  }
+});
+
+Scoreboard.connect();
+</script>
+</body>
+</html>

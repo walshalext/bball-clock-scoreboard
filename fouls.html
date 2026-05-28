@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Team Fouls</title>
+  <style>
+    /* FIBA §8: Team foul marker on the scorer's table.
+       - Min 250 mm tall, 125 mm wide.
+       - Shows current team fouls 0..4.
+       - After ball becomes live following the 4th team foul, the marker is
+         fully RED with no number visible (penalty / bonus situation).
+       Use this view at full-screen on a tablet/phone next to each team. */
+    :root {
+      --bg: #000;
+      --amber: #ff8c1a;
+      --red: #ff2424;
+      --muted: #555;
+      --white: #fff;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; background: var(--bg);
+                 color: var(--amber); overflow: hidden;
+                 font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                 font-variant-numeric: tabular-nums; }
+    .stage { width: 100vw; height: 100vh;
+             display: grid; grid-template-rows: auto 1fr auto;
+             padding: 2vh 4vw; gap: 1vh; }
+    .head {
+      text-align: center; font-size: 4vh; font-weight: 800;
+      color: var(--white); letter-spacing: 0.15em; text-transform: uppercase;
+    }
+    .head .team {
+      color: var(--amber);
+    }
+    .num-wrap {
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 2vh; border: 0.4vh solid var(--amber);
+      background: #050505;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .num-wrap.bonus { background: var(--red); border-color: var(--red); }
+    .num {
+      font-size: 70vh; font-weight: 900; color: var(--amber); line-height: 1;
+      text-shadow: 0 0 24px rgba(255,140,26,0.4),
+                   0 0 60px rgba(255,140,26,0.25);
+    }
+    .num-wrap.bonus .num { display: none; }
+
+    .foot {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 1.6vh; color: var(--muted); padding: 0 1vw;
+    }
+    .conn-dot { display: inline-block; width: 1.2vh; height: 1.2vh; border-radius: 50%;
+                background: var(--muted); margin-right: 0.6vh; vertical-align: middle; }
+    .conn-dot.ok { background: #2ea043; } .conn-dot.bad { background: var(--red); }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="head"><span class="team" id="team-name">—</span> Team Fouls</div>
+    <div class="num-wrap" id="wrap">
+      <div class="num" id="num">0</div>
+    </div>
+    <div class="foot">
+      <span><span class="conn-dot" id="conn-dot"></span><span id="conn-text">…</span></span>
+      <span id="latency">—</span>
+    </div>
+  </div>
+
+  <script src="/common.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const params = new URLSearchParams(location.search);
+    const side = (params.get("team") || "home").toLowerCase() === "away" ? "away" : "home";
+
+    function applyState(s) {
+      const team = s[side];
+      $("team-name").textContent = team.name || side.toUpperCase();
+      // Show 0..4 as a digit; show 4 then BONUS per FIBA Diagram 12a once bonus is on.
+      const wrap = $("wrap");
+      if (team.bonus) {
+        wrap.classList.add("bonus");
+      } else {
+        wrap.classList.remove("bonus");
+        // Cap displayed value at 4 (FIBA §8: shows 0..4, then red square).
+        $("num").textContent = Math.min(4, team.team_fouls);
+      }
+    }
+    Scoreboard.onState(applyState);
+
+    Scoreboard.onStatus((e) => {
+      const dot = $("conn-dot"), txt = $("conn-text"); dot.className = "conn-dot";
+      if (e.status === "open") { dot.classList.add("ok"); txt.textContent = "live"; }
+      else if (e.status === "closed") { dot.classList.add("bad"); txt.textContent = "offline"; }
+      else { txt.textContent = e.status; }
+    });
+    setInterval(() => {
+      const rtt = Scoreboard.getBestRttMs();
+      $("latency").textContent = isFinite(rtt) ? `rtt ${rtt.toFixed(1)}ms` : "—";
+    }, 500);
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "f" || e.key === "F") {
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+        else document.exitFullscreen();
+      }
+    });
+
+    Scoreboard.connect();
+  </script>
+</body>
+</html>

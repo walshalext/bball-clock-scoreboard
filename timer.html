@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>Timer Op</title>
+  <style>
+    /* ------------------------------------------------------------------- *
+     * Timer operator console.
+     *
+     * Optimised for a landscape ~10–12" tablet at the scorer's table.
+     * - Indicator strip lives in the TOP half so the operator can read it
+     *   while their hand hovers over the bottom half.
+     * - Every interactive control is a big tap target (min ~64px).
+     * - No hover-only feedback — every state has an explicit lit-up class.
+     * - Disables iOS double-tap-to-zoom and text selection.
+     * --------------------------------------------------------------------*/
+    :root {
+      --bg: #0e1116;
+      --panel: #161b22;
+      --panel-2: #1f262f;
+      --panel-3: #28303a;
+      --border: #2a313c;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #ff8c1a;
+      --green: #2ea043;
+      --green-2: #46c563;
+      --red: #da3633;
+      --red-2: #ff5247;
+      --yellow: #d4a017;
+      --cyan: #22d3ee;
+      --blue: #2f81f7;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; padding: 0; height: 100%; overflow: hidden;
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   Oxygen, Ubuntu, sans-serif;
+      touch-action: manipulation;
+      -webkit-user-select: none; user-select: none;
+    }
+
+    /* ---- layout ---- */
+    .app { display: grid;
+           grid-template-rows: minmax(0, 52fr) minmax(0, 48fr);
+           height: 100vh; gap: 6px; padding: 6px; }
+
+    /* ---- top: indicators ---- */
+    .top {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr 1fr;
+      gap: 6px; min-height: 0;
+    }
+    .card {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 14px; padding: 10px 14px;
+      display: flex; flex-direction: column; min-height: 0;
+    }
+    .card h2 {
+      margin: 0 0 4px; font-size: 12px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 2px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .clock-big {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-weight: 900; text-align: center; letter-spacing: 2px;
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      line-height: 1;
+    }
+    .clock-game  { color: var(--accent); font-size: clamp(72px, 13vw, 180px); }
+    .clock-shot  { color: var(--red);    font-size: clamp(56px, 10vw, 140px); }
+    .clock-to    { color: var(--cyan);   font-size: clamp(48px,  8vw, 110px); }
+
+    /* Run indicators — big lozenges that flip green/red. */
+    .run-pill {
+      font-size: 12px; font-weight: 800; letter-spacing: 1.5px;
+      text-transform: uppercase; padding: 5px 12px; border-radius: 999px;
+      background: var(--panel-2); color: var(--muted);
+      border: 1px solid var(--border);
+      display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+    }
+    .run-pill .led { width: 10px; height: 10px; border-radius: 50%;
+                     background: var(--muted); box-shadow: 0 0 0 1px #0006 inset; }
+    .run-pill.on { background: var(--green); color: #fff; border-color: var(--green-2);
+                   box-shadow: 0 0 16px -2px var(--green-2); }
+    .run-pill.on .led { background: #fff; box-shadow: 0 0 6px #fff; animation: pulse 1.1s ease-in-out infinite; }
+    .run-pill.off { background: var(--panel-2); color: var(--muted); }
+    .run-pill.warn { background: var(--accent); color: #1a1a1a; border-color: var(--accent); }
+    .run-pill.warn .led { background: #1a1a1a; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    /* Time-out card — flashes whole-card colour while clock running below thresholds. */
+    .card.to.urgent10 { background: #6b1313; animation: flashRed .5s steps(2,end) infinite; }
+    .card.to.urgent20 { background: #5a4400; }
+    @keyframes flashRed { 50% { background: #2a0a0a; } }
+
+    /* ---- bottom: button grid ---- */
+    .bottom {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr 1fr;
+      gap: 6px; min-height: 0;
+    }
+    .pane {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 14px; padding: 8px;
+      display: flex; flex-direction: column; gap: 6px; min-height: 0;
+    }
+    .pane h3 {
+      margin: 0; font-size: 11px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 2px;
+      padding: 2px 4px 4px;
+    }
+
+    button {
+      background: var(--panel-2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 10px;
+      padding: 0; font-size: 18px; font-weight: 800;
+      cursor: pointer; font-family: inherit;
+      min-height: 60px;
+      transition: background .06s, transform .04s, box-shadow .06s;
+    }
+    button:active { transform: translateY(1px); }
+    button.start { background: var(--green); border-color: var(--green-2); color: #fff;
+                   box-shadow: inset 0 0 0 2px transparent; }
+    button.start.armed { box-shadow: 0 0 14px -2px var(--green-2); }
+    button.stop  { background: var(--red);   border-color: var(--red-2);   color: #fff; }
+    button.stop.armed  { box-shadow: 0 0 14px -2px var(--red-2); }
+    button.preset { background: var(--panel-3); }
+    button.warn  { background: var(--accent); border-color: var(--accent); color: #111; }
+    button.ghost { background: transparent; border-color: var(--border); color: var(--muted); }
+    button.ghost.on { background: var(--cyan); color: #001; border-color: var(--cyan); }
+    button.cyan  { background: #0c6e84; border-color: var(--cyan); color: #fff; }
+    button.danger { background: #5a1011; border-color: var(--red); color: #fff; }
+    button[disabled] { opacity: 0.4; cursor: not-allowed; }
+
+    /* Siren button — tall, very red. */
+    button.siren {
+      background: var(--red); border-color: var(--red-2); color: #fff;
+      font-size: 26px; letter-spacing: 2px;
+      min-height: 100%;
+    }
+    button.siren.pressed {
+      background: #ff2020; box-shadow: 0 0 28px -2px #ff5050, inset 0 0 24px #ff8080;
+      animation: sirenPulse .35s ease-in-out infinite alternate;
+    }
+    @keyframes sirenPulse {
+      from { box-shadow: 0 0 18px -2px #ff5050, inset 0 0 14px #ff8080; }
+      to   { box-shadow: 0 0 36px  0px #ffa0a0, inset 0 0 28px #ffd0d0; }
+    }
+
+    .row { display: grid; gap: 4px; }
+    .row.cols-2 { grid-template-columns: 1fr 1fr; }
+    .row.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .row.cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+    .row.cols-6 { grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr; }
+    .flex-fill { flex: 1; }
+
+    .adjust-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 4px;
+      flex: 1;
+    }
+    .adjust-grid button {
+      font-size: 17px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 2px; line-height: 1;
+    }
+    .adjust-grid .lbl { font-size: 10px; font-weight: 700; color: #ffffff80;
+                        letter-spacing: 1px; }
+
+    /* ---- full-screen flash overlay (timeout warnings) ---- */
+    .flash {
+      position: fixed; inset: 0; pointer-events: none;
+      background: transparent; z-index: 9999;
+    }
+    .flash.amber  { animation: flashAmber  1.0s ease-out 1; }
+    .flash.orange { animation: flashOrange 1.2s ease-out 1; }
+    .flash.red    { animation: flashRedHard 1.6s ease-out 1; }
+    @keyframes flashAmber {
+      0%,30% { background: rgba(212,160,23,0.85); }
+      50%    { background: transparent; }
+      70%    { background: rgba(212,160,23,0.65); }
+      100%   { background: transparent; }
+    }
+    @keyframes flashOrange {
+      0%,25% { background: rgba(255,140,26,0.92); }
+      45%    { background: transparent; }
+      65%    { background: rgba(255,140,26,0.85); }
+      85%    { background: transparent; }
+      100%   { background: rgba(255,140,26,0.7); }
+    }
+    @keyframes flashRedHard {
+      0%,20% { background: rgba(218,54,51,0.98); }
+      35%    { background: transparent; }
+      50%    { background: rgba(218,54,51,0.98); }
+      65%    { background: transparent; }
+      80%    { background: rgba(218,54,51,0.98); }
+      100%   { background: transparent; }
+    }
+
+    .status-strip {
+      position: fixed; bottom: 4px; left: 6px; right: 6px;
+      display: flex; gap: 14px; font-size: 10px; color: var(--muted);
+      pointer-events: none; opacity: 0.7;
+    }
+    .legend { font-size: 10px; color: var(--muted); padding: 2px 4px;
+              text-transform: uppercase; letter-spacing: 1.5px; }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <!-- =====================  TOP: INDICATORS  ===================== -->
+  <div class="top">
+
+    <!-- Game clock -->
+    <div class="card">
+      <h2>
+        <span>Game clock</span>
+        <span id="game-run" class="run-pill off">
+          <span class="led"></span><span class="lbl">Stopped</span>
+        </span>
+      </h2>
+      <div class="clock-big clock-game" id="game-clock">00:00</div>
+    </div>
+
+    <!-- Shot clock (read-only on this view) -->
+    <div class="card">
+      <h2>
+        <span>Shot clock</span>
+        <span id="shot-run" class="run-pill off">
+          <span class="led"></span><span class="lbl">Stopped</span>
+        </span>
+      </h2>
+      <div class="clock-big clock-shot" id="shot-clock">24</div>
+    </div>
+
+    <!-- Time-out clock -->
+    <div class="card to" id="to-card">
+      <h2>
+        <span>Time-out</span>
+        <span id="to-run" class="run-pill off">
+          <span class="led"></span><span class="lbl">Stopped</span>
+        </span>
+        <span id="siren-pill" class="run-pill off" style="display:none">
+          <span class="led"></span><span class="lbl">SIREN</span>
+        </span>
+      </h2>
+      <div class="clock-big clock-to" id="to-clock">1:00</div>
+    </div>
+
+  </div>
+
+  <!-- =====================  BOTTOM: CONTROLS  ===================== -->
+  <div class="bottom">
+
+    <!-- ===== Game-clock controls ===== -->
+    <div class="pane">
+      <h3>Game clock — controls</h3>
+      <div class="row cols-2">
+        <button id="btn-start" class="start" data-shortcut="Space">▶ START <span class="legend">(Space)</span></button>
+        <button id="btn-stop"  class="stop"                          >■ PAUSE <span class="legend">(P)</span></button>
+      </div>
+      <h3>Quick reset</h3>
+      <div class="row cols-4">
+        <button class="preset" data-set-ms="1200000">20:00 <span class="legend">(1)</span></button>
+        <button class="preset" data-set-ms="900000" >15:00 <span class="legend">(2)</span></button>
+        <button class="preset" data-set-ms="600000" >10:00 <span class="legend">(3)</span></button>
+        <button class="preset" data-set-ms="120000" >2:00 <span class="legend">(4)</span></button>
+      </div>
+      <h3>Adjust</h3>
+      <div class="adjust-grid">
+        <button data-adjust-ms="60000" ><span class="lbl">MIN</span>+ 1:00</button>
+        <button data-adjust-ms="1000"  ><span class="lbl">SEC</span>+ 1.0</button>
+        <button data-adjust-ms="100"   ><span class="lbl">TENTH</span>+ 0.1</button>
+        <button data-adjust-ms="-60000"><span class="lbl">MIN</span>− 1:00</button>
+        <button data-adjust-ms="-1000" ><span class="lbl">SEC</span>− 1.0</button>
+        <button data-adjust-ms="-100"  ><span class="lbl">TENTH</span>− 0.1</button>
+      </div>
+    </div>
+
+    <!-- ===== Time-out controls ===== -->
+    <div class="pane">
+      <h3>Time-out clock</h3>
+      <div class="row cols-2">
+        <button id="btn-to-start" class="start">▶ START <span class="legend">(T)</span></button>
+        <button id="btn-to-stop"  class="stop" >■ PAUSE <span class="legend">(Y)</span></button>
+      </div>
+      <div class="row cols-2">
+        <button id="btn-to-reset" class="preset">Reset 1:00 <span class="legend">(R)</span></button>
+        <button id="btn-to-warn-20" class="ghost">20s warn: OFF <span class="legend">(W)</span></button>
+      </div>
+      <h3>Quick reset</h3>
+      <div class="row cols-4">
+        <button class="preset" data-to-ms="30000" >0:30</button>
+        <button class="preset" data-to-ms="60000" >1:00</button>
+        <button class="preset" data-to-ms="75000" >1:15</button>
+        <button class="preset" data-to-ms="120000">2:00</button>
+      </div>
+      <h3>Adjust</h3>
+      <div class="row cols-4">
+        <button data-to-adjust="10000" >+ 10s</button>
+        <button data-to-adjust="1000"  >+ 1s</button>
+        <button data-to-adjust="-1000" >− 1s</button>
+        <button data-to-adjust="-10000">− 10s</button>
+      </div>
+    </div>
+
+    <!-- ===== Siren ===== -->
+    <div class="pane">
+      <h3>Siren (hold)</h3>
+      <button id="btn-siren" class="siren">SIREN<br><span class="legend" style="font-size:11px">hold · key H</span></button>
+    </div>
+
+  </div>
+</div>
+
+<div class="flash" id="flash-overlay"></div>
+
+<div class="status-strip">
+  <span id="ws-status">connecting…</span>
+  <span id="rtt-status"></span>
+  <span style="margin-left:auto">/timer — operator console</span>
+</div>
+
+<script src="/common.js"></script>
+<script>
+(() => {
+  "use strict";
+
+  // ---------------------------------------------------------------------- //
+  // Element handles
+  // ---------------------------------------------------------------------- //
+  const $ = (id) => document.getElementById(id);
+  const gameClockEl = $("game-clock");
+  const shotClockEl = $("shot-clock");
+  const toClockEl   = $("to-clock");
+  const gameRunEl   = $("game-run");
+  const shotRunEl   = $("shot-run");
+  const toRunEl     = $("to-run");
+  const sirenPillEl = $("siren-pill");
+  const toCardEl    = $("to-card");
+  const btnStart    = $("btn-start");
+  const btnStop     = $("btn-stop");
+  const btnToStart  = $("btn-to-start");
+  const btnToStop   = $("btn-to-stop");
+  const btnToReset  = $("btn-to-reset");
+  const btnToWarn20 = $("btn-to-warn-20");
+  const btnSiren    = $("btn-siren");
+  const flashEl     = $("flash-overlay");
+  const wsStatusEl  = $("ws-status");
+  const rttStatusEl = $("rtt-status");
+
+  let lastState = null;
+
+  // ---------------------------------------------------------------------- //
+  // Render loop — predict the clocks locally at 60 fps from the anchors.
+  // ---------------------------------------------------------------------- //
+  function render() {
+    const s = Scoreboard.getState();
+    lastState = s;
+
+    // Game clock
+    const gMs = Scoreboard.computeDisplayedGameMs();
+    gameClockEl.textContent = Scoreboard.formatClock(gMs, { showTenths: true });
+    setRun(gameRunEl, !!(s && s.running), "Running", "Stopped");
+
+    // Shot clock (read-only here, but mirror the indicator + value)
+    const scMs = Scoreboard.computeDisplayedShotMs();
+    // Reuse the FIBA-correct formatter; when hidden, blank out the value.
+    if (s && s.sc_visible === false) {
+      shotClockEl.textContent = "—";
+    } else {
+      shotClockEl.textContent = Scoreboard.formatShot(scMs);
+    }
+    setRun(shotRunEl, !!(s && s.sc_running), "Running", "Stopped");
+
+    // Time-out clock
+    const tMs = Scoreboard.computeDisplayedTimeoutMs();
+    toClockEl.textContent = Scoreboard.formatClock(tMs, { showTenths: tMs < 60000 });
+    setRun(toRunEl, !!(s && s.to_running), "Running", "Stopped");
+
+    // Time-out card urgency tint while running.
+    toCardEl.classList.remove("urgent10", "urgent20");
+    if (s && s.to_running) {
+      const sec = tMs / 1000;
+      if (sec <= 10.5)        toCardEl.classList.add("urgent10");
+      else if (s.to_warn_20 && sec <= 20.5) toCardEl.classList.add("urgent20");
+    }
+
+    // Siren indicator pill — visible only when on.
+    if (s && s.siren_active) {
+      sirenPillEl.style.display = "";
+      sirenPillEl.classList.remove("off");
+      sirenPillEl.classList.add("warn");
+    } else {
+      sirenPillEl.style.display = "none";
+      sirenPillEl.classList.remove("warn");
+      sirenPillEl.classList.add("off");
+    }
+
+    // Arm the start/stop indicator that matches the current state.
+    btnStart.classList.toggle("armed", !!(s && !s.running));
+    btnStop.classList.toggle("armed",  !!(s &&  s.running));
+    btnToStart.classList.toggle("armed", !!(s && !s.to_running));
+    btnToStop.classList.toggle("armed",  !!(s &&  s.to_running));
+
+    // 20s-warn ghost-button reflection.
+    if (s) {
+      btnToWarn20.classList.toggle("on", !!s.to_warn_20);
+      btnToWarn20.firstChild && (btnToWarn20.childNodes[0].nodeValue =
+        s.to_warn_20 ? "20s warn: ON " : "20s warn: OFF ");
+    }
+
+    requestAnimationFrame(render);
+  }
+
+  function setRun(el, on, onText, offText) {
+    el.classList.toggle("on", on);
+    el.classList.toggle("off", !on);
+    const lbl = el.querySelector(".lbl");
+    if (lbl) lbl.textContent = on ? onText : offText;
+  }
+
+  // ---------------------------------------------------------------------- //
+  // Status / connection display
+  // ---------------------------------------------------------------------- //
+  Scoreboard.onStatus(({ status }) => {
+    wsStatusEl.textContent = status === "open" ? "● live"
+                           : status === "connecting" ? "connecting…"
+                           : "● disconnected";
+    wsStatusEl.style.color = status === "open" ? "var(--green-2)"
+                            : status === "connecting" ? "var(--muted)"
+                            : "var(--red-2)";
+  });
+  setInterval(() => {
+    const rtt = Scoreboard.getBestRttMs();
+    rttStatusEl.textContent = isFinite(rtt) ? `RTT ${rtt.toFixed(0)}ms` : "";
+  }, 1000);
+
+  // ---------------------------------------------------------------------- //
+  // Buzzer events -> full-screen flash overlay (time-out warnings).
+  // ---------------------------------------------------------------------- //
+  Scoreboard.onBuzzer(({ kind }) => {
+    if (kind === "timeout_warn_20") triggerFlash("amber");
+    else if (kind === "timeout_warn_10") triggerFlash("orange");
+    else if (kind === "timeout_end") triggerFlash("red");
+    // Period horn from game clock also gets a red flash so the operator
+    // can't miss it if they happen to be staring at this screen.
+    else if (kind === "period") triggerFlash("red");
+  });
+  function triggerFlash(cls) {
+    flashEl.classList.remove("amber", "orange", "red");
+    // Force reflow so the animation re-fires when the same class is re-added.
+    void flashEl.offsetWidth;
+    flashEl.classList.add(cls);
+  }
+
+  // ---------------------------------------------------------------------- //
+  // Wire buttons
+  // ---------------------------------------------------------------------- //
+  btnStart.addEventListener("click",   () => Scoreboard.sendCommand("start"));
+  btnStop .addEventListener("click",   () => Scoreboard.sendCommand("stop"));
+
+  // Preset times
+  document.querySelectorAll("[data-set-ms]").forEach(b => {
+    b.addEventListener("click", () =>
+      Scoreboard.sendCommand("set_time", { value_ms: Number(b.dataset.setMs) }));
+  });
+  // +/- adjust on game clock
+  document.querySelectorAll("[data-adjust-ms]").forEach(b => {
+    b.addEventListener("click", () =>
+      Scoreboard.sendCommand("adjust_game", { delta_ms: Number(b.dataset.adjustMs) }));
+  });
+
+  // Time-out clock
+  btnToStart.addEventListener("click",  () => Scoreboard.sendCommand("to_start"));
+  btnToStop .addEventListener("click",  () => Scoreboard.sendCommand("to_stop"));
+  btnToReset.addEventListener("click",  () => Scoreboard.sendCommand("to_reset"));
+  btnToWarn20.addEventListener("click", () => Scoreboard.sendCommand("to_toggle_warn_20"));
+  document.querySelectorAll("[data-to-ms]").forEach(b => {
+    b.addEventListener("click", () =>
+      Scoreboard.sendCommand("to_set", { value_ms: Number(b.dataset.toMs) }));
+  });
+  document.querySelectorAll("[data-to-adjust]").forEach(b => {
+    b.addEventListener("click", () =>
+      Scoreboard.sendCommand("to_adjust", { delta_ms: Number(b.dataset.toAdjust) }));
+  });
+
+  // ---------------------------------------------------------------------- //
+  // Siren — momentary (press-and-hold).
+  // pointerdown -> siren_on, pointerup/pointerleave/cancel/blur -> siren_off
+  // ---------------------------------------------------------------------- //
+  let sirenOn = false;
+  function sirenStart() {
+    if (sirenOn) return;
+    sirenOn = true;
+    btnSiren.classList.add("pressed");
+    Scoreboard.sendCommand("siren_on");
+  }
+  function sirenEnd() {
+    if (!sirenOn) return;
+    sirenOn = false;
+    btnSiren.classList.remove("pressed");
+    Scoreboard.sendCommand("siren_off");
+  }
+  // Use pointer events (cover both mouse and touch). Capture release outside
+  // the button via document-level pointerup so a slide-off doesn't strand
+  // the siren on.
+  btnSiren.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    btnSiren.setPointerCapture?.(e.pointerId);
+    sirenStart();
+  });
+  btnSiren.addEventListener("pointerup",     sirenEnd);
+  btnSiren.addEventListener("pointercancel", sirenEnd);
+  btnSiren.addEventListener("lostpointercapture", sirenEnd);
+  // Safety net: any time the page loses focus, or any pointer is released
+  // anywhere, end the siren — keeps an external relay from getting stuck on.
+  window.addEventListener("blur", sirenEnd);
+  window.addEventListener("pointerup", sirenEnd);
+  document.addEventListener("visibilitychange",
+    () => { if (document.hidden) sirenEnd(); });
+  window.addEventListener("beforeunload", () => {
+    // Best-effort fire-and-forget; even if it doesn't make it, the
+    // external integration should treat a dropped websocket as "off".
+    if (sirenOn) Scoreboard.sendCommand("siren_off");
+  });
+
+  // ---------------------------------------------------------------------- //
+  // Keyboard shortcuts
+  //
+  //   Space        -> start         (game clock)
+  //   P            -> pause         (game clock)
+  //   1 2 3 4      -> 20:00 / 15:00 / 10:00 / 2:00
+  //   Arrow Up/Dn  -> ± 1 minute
+  //   Arrow R/L    -> ± 1 second
+  //   Shift+R/L    -> ± 0.1 second
+  //   H            -> siren (hold)
+  //   T / Y        -> time-out start / pause
+  //   R            -> time-out reset
+  //   W            -> toggle 20s warn
+  //
+  // ---------------------------------------------------------------------- //
+  document.addEventListener("keydown", (e) => {
+    if (e.target && e.target.tagName === "INPUT") return;
+    if (e.repeat && e.key.toLowerCase() !== "h") return;  // hold-H ok for siren
+    const k = e.key;
+
+    if (e.code === "Space")        { e.preventDefault(); Scoreboard.sendCommand("start"); }
+    else if (k === "p" || k === "P") { Scoreboard.sendCommand("stop"); }
+    else if (k === "1") Scoreboard.sendCommand("set_time", { value_ms: 1200000 });
+    else if (k === "2") Scoreboard.sendCommand("set_time", { value_ms:  900000 });
+    else if (k === "3") Scoreboard.sendCommand("set_time", { value_ms:  600000 });
+    else if (k === "4") Scoreboard.sendCommand("set_time", { value_ms:  120000 });
+    else if (k === "ArrowUp")   Scoreboard.sendCommand("adjust_game", { delta_ms:  60000 });
+    else if (k === "ArrowDown") Scoreboard.sendCommand("adjust_game", { delta_ms: -60000 });
+    else if (k === "ArrowRight") {
+      Scoreboard.sendCommand("adjust_game",
+        { delta_ms: e.shiftKey ? 100 : 1000 });
+    }
+    else if (k === "ArrowLeft") {
+      Scoreboard.sendCommand("adjust_game",
+        { delta_ms: e.shiftKey ? -100 : -1000 });
+    }
+    else if (k === "t" || k === "T") Scoreboard.sendCommand("to_start");
+    else if (k === "y" || k === "Y") Scoreboard.sendCommand("to_stop");
+    else if (k === "r" || k === "R") Scoreboard.sendCommand("to_reset");
+    else if (k === "w" || k === "W") Scoreboard.sendCommand("to_toggle_warn_20");
+    else if (k === "h" || k === "H") {
+      // Hold-H acts as a hold-siren via key autorepeat — once we see the
+      // first keydown we send on, and we send off in keyup.
+      if (!sirenOn) sirenStart();
+    }
+  });
+  document.addEventListener("keyup", (e) => {
+    if (e.key === "h" || e.key === "H") sirenEnd();
+  });
+
+  // ---------------------------------------------------------------------- //
+  // Boot
+  // ---------------------------------------------------------------------- //
+  Scoreboard.connect();
+  requestAnimationFrame(render);
+})();
+</script>
+</body>
+</html>

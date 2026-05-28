@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Time-out</title>
+  <style>
+    /* Dedicated full-screen time-out countdown. Always shows the current
+       value (counting down when running, paused otherwise). Edge-lights
+       flash cyan at the operator-configured warning points:
+
+         - 20 s remaining   (only when to_warn_20 is on)
+         - 10 s remaining
+         -  0 s remaining   (longer flash, also auto-stops the clock) */
+    :root {
+      --bg: #000;
+      --cyan: #22d3ee;
+      --amber: #ff8c1a;
+      --red: #ff3030;
+      --muted: #555;
+      --green: #2ea043;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; background: var(--bg);
+                 color: var(--cyan); overflow: hidden;
+                 font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                 font-variant-numeric: tabular-nums; }
+    .stage { width: 100vw; height: 100vh; display: grid;
+             grid-template-rows: auto 1fr auto; padding: 2vh 3vw; }
+    .top { display: flex; justify-content: space-between; align-items: center;
+           color: var(--muted); font-size: 2.5vh;
+           letter-spacing: 0.3em; text-transform: uppercase; }
+    .top .warn-on { color: var(--cyan); }
+
+    .clock-wrap { display: flex; align-items: center; justify-content: center; }
+    .clock {
+      font-size: min(60vh, 50vw);
+      font-weight: 900; line-height: 1; letter-spacing: 0.04em;
+      color: var(--cyan);
+      text-shadow: 0 0 16px rgba(34, 211, 238, 0.55),
+                   0 0 48px rgba(34, 211, 238, 0.3);
+    }
+    .clock.paused  { color: var(--muted);
+      text-shadow: none; opacity: 0.55; }
+    .clock.warn    { color: var(--amber);
+      text-shadow: 0 0 16px rgba(255, 140, 26, 0.55),
+                   0 0 48px rgba(255, 140, 26, 0.3); }
+    .clock.urgent  { color: var(--red);
+      text-shadow: 0 0 16px rgba(255, 48, 48, 0.55),
+                   0 0 48px rgba(255, 48, 48, 0.3); }
+
+    .bottom { display: flex; justify-content: space-between; align-items: center;
+              font-size: 1.6vh; color: var(--muted); padding: 0 1vw; }
+    .conn-dot { display: inline-block; width: 1.2vh; height: 1.2vh; border-radius: 50%;
+                background: var(--muted); margin-right: 0.6vh; vertical-align: middle; }
+    .conn-dot.ok { background: var(--green); }
+    .conn-dot.bad { background: var(--red); }
+
+    .edge-lights {
+      position: fixed; inset: 0; pointer-events: none; z-index: 60;
+      box-shadow: inset 0 0 0 0 transparent;
+      transition: box-shadow 0.15s ease-out;
+    }
+    /* Cyan flashes for the time-out warning/end. */
+    .edge-lights.flash-to {
+      box-shadow:
+        inset 0 0 0 2.5vh rgba(34, 211, 238, 0.95),
+        inset 0 0 14vh   rgba(34, 211, 238, 0.55),
+        inset 0 0 28vh   rgba(34, 211, 238, 0.25);
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="top">
+      <span>Time-out</span>
+      <span id="warn-tag">20s warn: off</span>
+    </div>
+    <div class="clock-wrap"><div class="clock paused" id="clock">1:00</div></div>
+    <div class="bottom">
+      <span><span class="conn-dot" id="conn-dot"></span><span id="conn-text">…</span></span>
+      <span id="latency">—</span>
+    </div>
+  </div>
+
+  <div id="edge-lights" class="edge-lights"></div>
+
+  <script src="/common.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    function formatTo(ms) {
+      const s = Math.max(0, Math.ceil(ms / 1000));
+      const m = Math.floor(s / 60);
+      const r = s % 60;
+      return `${m}:${r.toString().padStart(2, "0")}`;
+    }
+
+    function tick() {
+      const s = Scoreboard.getState();
+      if (s) {
+        const ms = Scoreboard.computeDisplayedTimeoutMs();
+        const el = $("clock");
+        el.textContent = formatTo(ms);
+        el.classList.toggle("paused", !s.to_running && ms === s.to_anchor_value_ms && ms > 0);
+        // Urgent under 10s, warning under 20s (always coloured, regardless
+        // of whether the operator has the 20s warning buzzer enabled).
+        el.classList.toggle("urgent", s.to_running && ms <= 10000);
+        el.classList.toggle("warn",   s.to_running && ms > 10000 && ms <= 20000);
+
+        $("warn-tag").textContent = "20s warn: " + (s.to_warn_20 ? "ON" : "off");
+        $("warn-tag").classList.toggle("warn-on", !!s.to_warn_20);
+      }
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+
+    Scoreboard.onStatus((e) => {
+      const dot = $("conn-dot"), txt = $("conn-text"); dot.className = "conn-dot";
+      if (e.status === "open") { dot.classList.add("ok"); txt.textContent = "live"; }
+      else if (e.status === "closed") { dot.classList.add("bad"); txt.textContent = "offline"; }
+      else { txt.textContent = e.status; }
+    });
+    setInterval(() => {
+      const rtt = Scoreboard.getBestRttMs();
+      $("latency").textContent = isFinite(rtt) ? `rtt ${rtt.toFixed(1)}ms` : "—";
+    }, 500);
+
+    Scoreboard.onBuzzer((b) => {
+      if (b.kind === "timeout_warn_20" || b.kind === "timeout_warn_10" || b.kind === "timeout_end") {
+        const el = $("edge-lights");
+        el.classList.add("flash-to");
+        const dur = b.kind === "timeout_end" ? 2000 : 800;
+        setTimeout(() => el.classList.remove("flash-to"), dur);
+      }
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "f" || e.key === "F") {
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+        else document.exitFullscreen();
+      }
+    });
+
+    Scoreboard.connect();
+  </script>
+</body>
+</html>

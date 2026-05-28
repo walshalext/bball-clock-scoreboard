@@ -1,0 +1,1 @@
+Don't worry too much about testing. I can do that, focus on features and I can report any issues

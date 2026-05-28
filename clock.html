@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Game Clock</title>
+  <style>
+    :root {
+      --bg: #000;
+      --fg: #ff8c1a;       /* classic scoreboard amber */
+      --fg-dim: #6a3a05;
+      --muted: #555;
+      --warn: #ff3030;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; background: var(--bg);
+                 color: var(--fg); overflow: hidden;
+                 font-family: ui-monospace, "SFMono-Regular", Menlo,
+                              "Liberation Mono", Consolas, monospace; }
+    .stage { width: 100vw; height: 100vh; display: grid;
+             grid-template-rows: auto 1fr auto; }
+    .top, .bottom {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 2vh 3vw; font-size: 4vh; color: var(--muted);
+      letter-spacing: 0.2em; text-transform: uppercase;
+    }
+    .period { color: var(--fg); }
+    .clock-wrap { display: flex; align-items: center; justify-content: center; }
+    .clock {
+      font-size: min(48vh, 36vw);
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      line-height: 1;
+      /* a soft glow to approximate the LED look */
+      text-shadow:
+        0 0 8px rgba(255, 140, 26, 0.4),
+        0 0 24px rgba(255, 140, 26, 0.25);
+      font-variant-numeric: tabular-nums;
+    }
+    .pulse { animation: pulse 1s ease-in-out infinite alternate; }
+    @keyframes pulse {
+      from { opacity: 0.85; }
+      to   { opacity: 1; }
+    }
+    .conn-dot { width: 1.6vh; height: 1.6vh; border-radius: 50%;
+                background: var(--muted); display: inline-block;
+                margin-right: 1vh; vertical-align: middle; }
+    .conn-dot.ok { background: #2ea043; }
+    .conn-dot.bad { background: var(--warn); }
+    .hint { color: var(--muted); font-size: 2vh; }
+
+    /* Time-out overlay: a small countdown shown only when ?timeout=on AND
+       the time-out clock is actually running. */
+    .to-overlay {
+      position: fixed; bottom: 8vh; left: 0; right: 0;
+      text-align: center;
+      font-size: 6vh; font-weight: 800; color: #22d3ee;
+      letter-spacing: 0.05em; line-height: 1;
+      text-shadow: 0 0 10px rgba(34, 211, 238, 0.5);
+      pointer-events: none;
+    }
+    .to-overlay .lbl {
+      display: block;
+      font-size: 1.6vh; color: var(--muted);
+      letter-spacing: 0.3em; text-transform: uppercase;
+      margin-bottom: 0.5vh;
+    }
+    .to-overlay.hidden { display: none; }
+
+    /* Edge-lights frame (FIBA §1.1.6 / §1.1.7 analog) */
+    .edge-lights {
+      position: fixed; inset: 0; pointer-events: none; z-index: 60;
+      box-shadow: inset 0 0 0 0 transparent;
+      transition: box-shadow 0.15s ease-out;
+    }
+    .edge-lights.flash-period {
+      box-shadow:
+        inset 0 0 0 2.5vh rgba(255, 48, 48, 0.95),
+        inset 0 0 14vh   rgba(255, 48, 48, 0.55),
+        inset 0 0 28vh   rgba(255, 48, 48, 0.25);
+    }
+    .edge-lights.flash-shot {
+      box-shadow:
+        inset 0 0 0 2.5vh rgba(255, 210, 51, 0.95),
+        inset 0 0 14vh   rgba(255, 210, 51, 0.55),
+        inset 0 0 28vh   rgba(255, 210, 51, 0.25);
+    }
+    .edge-lights.flash-to {
+      box-shadow:
+        inset 0 0 0 2.5vh rgba(34, 211, 238, 0.95),
+        inset 0 0 14vh   rgba(34, 211, 238, 0.55),
+        inset 0 0 28vh   rgba(34, 211, 238, 0.25);
+    }
+  </style>
+</head>
+<body>
+  <div id="edge-lights" class="edge-lights"></div>
+  <div id="to-overlay" class="to-overlay hidden">
+    <span class="lbl">Time-out</span>
+    <span id="to-clock">1:00</span>
+  </div>
+  <div class="stage">
+    <div class="top">
+      <span><span class="period">P<span id="period">-</span></span> / <span id="period-count">-</span></span>
+      <span><span class="conn-dot" id="conn-dot"></span><span id="conn-text">…</span></span>
+    </div>
+    <div class="clock-wrap">
+      <div class="clock" id="clock">00:00</div>
+    </div>
+    <div class="bottom">
+      <span class="hint">F = fullscreen</span>
+      <span class="hint" id="latency">—</span>
+    </div>
+  </div>
+
+  <script src="/common.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    // URL params: ?timeout=on enables the time-out countdown overlay AND
+    // the cyan edge-light flashes on this view.
+    const params = new URLSearchParams(location.search);
+    const SHOW_TIMEOUT = (params.get("timeout") || "off").toLowerCase() === "on";
+
+    function formatTo(ms) {
+      const s = Math.max(0, Math.ceil(ms / 1000));
+      const m = Math.floor(s / 60);
+      const r = s % 60;
+      return `${m}:${r.toString().padStart(2, "0")}`;
+    }
+
+    function render() {
+      const s = Scoreboard.getState();
+      const ms = Scoreboard.computeDisplayedGameMs();
+      const el = $("clock");
+      el.textContent = Scoreboard.formatClock(ms, { showTenths: true });
+      el.classList.toggle("pulse", !!(s && s.running));
+
+      // Time-out overlay: shown only when enabled and the timer is running.
+      const ov = $("to-overlay");
+      if (SHOW_TIMEOUT && s && s.to_running) {
+        ov.classList.remove("hidden");
+        $("to-clock").textContent = formatTo(Scoreboard.computeDisplayedTimeoutMs());
+      } else {
+        ov.classList.add("hidden");
+      }
+
+      requestAnimationFrame(render);
+    }
+    requestAnimationFrame(render);
+
+    Scoreboard.onState((s) => {
+      $("period").textContent = String(s.period_indicator);
+      $("period-count").textContent = s.period_name || "";
+    });
+
+    Scoreboard.onStatus((e) => {
+      const dot = $("conn-dot"), txt = $("conn-text");
+      dot.className = "conn-dot";
+      if (e.status === "open")        { dot.classList.add("ok");  txt.textContent = "live"; }
+      else if (e.status === "closed") { dot.classList.add("bad"); txt.textContent = "offline"; }
+      else                            { txt.textContent = e.status; }
+    });
+
+    setInterval(() => {
+      const rtt = Scoreboard.getBestRttMs();
+      $("latency").textContent = isFinite(rtt) ? `rtt ${rtt.toFixed(1)}ms` : "—";
+    }, 500);
+
+    // Buzzer edge-lights: red on period buzzer, yellow on shot-clock buzzer,
+    // cyan on time-out events (only when ?timeout=on for this view).
+    Scoreboard.onBuzzer((b) => {
+      const el = $("edge-lights");
+      if (b.kind === "period") {
+        el.classList.add("flash-period");
+        setTimeout(() => el.classList.remove("flash-period"), 2000);
+      } else if (b.kind === "shot_clock") {
+        el.classList.add("flash-shot");
+        setTimeout(() => el.classList.remove("flash-shot"), 1000);
+      } else if (SHOW_TIMEOUT && (b.kind === "timeout_warn_20" ||
+                                   b.kind === "timeout_warn_10" ||
+                                   b.kind === "timeout_end")) {
+        el.classList.add("flash-to");
+        const dur = b.kind === "timeout_end" ? 2000 : 800;
+        setTimeout(() => el.classList.remove("flash-to"), dur);
+      }
+    });
+
+    // Press F to toggle fullscreen on the page.
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "f" || e.key === "F") {
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+        else document.exitFullscreen();
+      }
+    });
+
+    Scoreboard.connect();
+  </script>
+</body>
+</html>

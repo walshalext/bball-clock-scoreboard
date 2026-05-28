@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>Shot Clock Op</title>
+  <style>
+    /* ------------------------------------------------------------------- *
+     * Shot-clock operator console.
+     *
+     * Mirror layout of /timer but optimised for the shot-clock seat.
+     * - Big shot-clock readout dominates the top half (peripheral-readable).
+     * - Game-clock is shown read-only beside it as context.
+     * - Independent + hide are dedicated big toggles in the bottom half.
+     * --------------------------------------------------------------------*/
+    :root {
+      --bg: #0e1116;
+      --panel: #161b22;
+      --panel-2: #1f262f;
+      --panel-3: #28303a;
+      --border: #2a313c;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #ff8c1a;
+      --green: #2ea043;
+      --green-2: #46c563;
+      --red: #da3633;
+      --red-2: #ff5247;
+      --yellow: #d4a017;
+      --cyan: #22d3ee;
+      --blue: #2f81f7;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; padding: 0; height: 100%; overflow: hidden;
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   Oxygen, Ubuntu, sans-serif;
+      touch-action: manipulation;
+      -webkit-user-select: none; user-select: none;
+    }
+
+    .app { display: grid;
+           grid-template-rows: minmax(0, 52fr) minmax(0, 48fr);
+           height: 100vh; gap: 6px; padding: 6px; }
+
+    /* ---- top: indicators ---- */
+    .top {
+      display: grid;
+      /* Shot clock takes the lion's share since it's this operator's focus. */
+      grid-template-columns: 1.6fr 1fr;
+      gap: 6px; min-height: 0;
+    }
+    .card {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 14px; padding: 10px 14px;
+      display: flex; flex-direction: column; min-height: 0;
+    }
+    .card.shot.hidden { background: #1a1a1a; }
+    .card h2 {
+      margin: 0 0 4px; font-size: 12px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 2px;
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 6px; flex-wrap: wrap;
+    }
+    .clock-big {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-weight: 900; text-align: center; letter-spacing: 2px;
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      line-height: 1;
+    }
+    .clock-shot { color: var(--red);     font-size: clamp(120px, 22vw, 320px); }
+    .clock-shot.hidden { color: #555;    font-size: clamp(60px, 8vw, 120px); }
+    .clock-game { color: var(--accent);  font-size: clamp(60px,  9vw, 130px); }
+
+    .run-pill {
+      font-size: 12px; font-weight: 800; letter-spacing: 1.5px;
+      text-transform: uppercase; padding: 5px 12px; border-radius: 999px;
+      background: var(--panel-2); color: var(--muted);
+      border: 1px solid var(--border);
+      display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+    }
+    .run-pill .led { width: 10px; height: 10px; border-radius: 50%;
+                     background: var(--muted); box-shadow: 0 0 0 1px #0006 inset; }
+    .run-pill.on { background: var(--green); color: #fff; border-color: var(--green-2);
+                   box-shadow: 0 0 16px -2px var(--green-2); }
+    .run-pill.on .led { background: #fff; box-shadow: 0 0 6px #fff;
+                        animation: pulse 1.1s ease-in-out infinite; }
+    .run-pill.off { background: var(--panel-2); color: var(--muted); }
+    .run-pill.warn { background: var(--accent); color: #1a1a1a; border-color: var(--accent); }
+    .run-pill.warn .led { background: #1a1a1a; }
+    .run-pill.danger { background: var(--red); color: #fff; border-color: var(--red-2);
+                       box-shadow: 0 0 12px -2px var(--red-2); }
+    .run-pill.danger .led { background: #fff; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    .pill-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+    /* ---- bottom: button grid ---- */
+    .bottom {
+      display: grid;
+      grid-template-columns: 1.5fr 1fr;
+      gap: 6px; min-height: 0;
+    }
+    .pane {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 14px; padding: 8px;
+      display: flex; flex-direction: column; gap: 6px; min-height: 0;
+    }
+    .pane h3 {
+      margin: 0; font-size: 11px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 2px;
+      padding: 2px 4px 4px;
+    }
+
+    button {
+      background: var(--panel-2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 10px;
+      padding: 0; font-size: 18px; font-weight: 800;
+      cursor: pointer; font-family: inherit;
+      min-height: 60px;
+      transition: background .06s, transform .04s, box-shadow .06s;
+    }
+    button:active { transform: translateY(1px); }
+    button.start { background: var(--green); border-color: var(--green-2); color: #fff; }
+    button.start.armed { box-shadow: 0 0 14px -2px var(--green-2); }
+    button.stop  { background: var(--red);   border-color: var(--red-2);   color: #fff; }
+    button.stop.armed  { box-shadow: 0 0 14px -2px var(--red-2); }
+    button.preset { background: var(--panel-3); }
+    button.reset24 { background: #1f3a52; border-color: #356da4; color: #fff;
+                     font-size: 26px; }
+    button.reset14 { background: #3a2a52; border-color: #6d56a4; color: #fff;
+                     font-size: 26px; }
+    /* HIDE sits in the primary reset row because the shot-clock operator
+       presses it every time the ball touches the ring -- it's part of the
+       between-plays workflow, not a "mode". A distinct dark/amber tone
+       keeps it visually separable from the 24/14 reset buttons. */
+    button.hide-btn { background: #3a2a14; border-color: var(--accent);
+                      color: var(--accent); font-size: 24px;
+                      letter-spacing: 2px; }
+    button.hide-btn.armed { box-shadow: 0 0 14px -2px var(--accent); }
+    button.ghost { background: transparent; border-color: var(--border); color: var(--muted); }
+    button.ghost.on { background: var(--accent); color: #111; border-color: var(--accent); }
+    button.ghost.on-cyan { background: var(--cyan); color: #001; border-color: var(--cyan); }
+    button[disabled] { opacity: 0.4; cursor: not-allowed; }
+
+    .row { display: grid; gap: 4px; }
+    .row.cols-2 { grid-template-columns: 1fr 1fr; }
+    .row.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .row.cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+    .adjust-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 4px; flex: 1;
+    }
+    .adjust-grid button {
+      font-size: 17px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 2px; line-height: 1;
+    }
+    .adjust-grid .lbl { font-size: 10px; font-weight: 700; color: #ffffff80;
+                        letter-spacing: 1px; }
+
+    .legend { font-size: 10px; color: var(--muted); padding: 2px 4px;
+              text-transform: uppercase; letter-spacing: 1.5px; }
+
+    .status-strip {
+      position: fixed; bottom: 4px; left: 6px; right: 6px;
+      display: flex; gap: 14px; font-size: 10px; color: var(--muted);
+      pointer-events: none; opacity: 0.7;
+    }
+
+    /* Big banner when the shot clock is hidden — so the operator can't
+       accidentally leave it hidden across plays. */
+    .hidden-banner {
+      position: absolute; inset: 0; pointer-events: none;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--red-2); font-size: clamp(48px, 7vw, 96px);
+      font-weight: 900; letter-spacing: 6px; text-shadow: 0 0 30px var(--red);
+      animation: hidPulse 1.4s ease-in-out infinite;
+    }
+    @keyframes hidPulse {
+      0%,100% { opacity: 0.55; }
+      50%     { opacity: 1.0;  }
+    }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <!-- =====================  TOP: INDICATORS  ===================== -->
+  <div class="top">
+
+    <!-- Shot clock -->
+    <div class="card shot" id="shot-card" style="position:relative">
+      <h2>
+        <span>Shot clock</span>
+        <div class="pill-row">
+          <span id="shot-run" class="run-pill off">
+            <span class="led"></span><span class="lbl">Stopped</span>
+          </span>
+          <span id="shot-indep" class="run-pill off" style="display:none">
+            <span class="led"></span><span class="lbl">Independent</span>
+          </span>
+          <span id="shot-hidden" class="run-pill off" style="display:none">
+            <span class="led"></span><span class="lbl">Hidden</span>
+          </span>
+        </div>
+      </h2>
+      <div class="clock-big clock-shot" id="shot-clock">24</div>
+      <div class="hidden-banner" id="hidden-banner" style="display:none">HIDDEN</div>
+    </div>
+
+    <!-- Game clock (read-only) -->
+    <div class="card">
+      <h2>
+        <span>Game clock</span>
+        <span id="game-run" class="run-pill off">
+          <span class="led"></span><span class="lbl">Stopped</span>
+        </span>
+      </h2>
+      <div class="clock-big clock-game" id="game-clock">00:00</div>
+    </div>
+
+  </div>
+
+  <!-- =====================  BOTTOM: CONTROLS  ===================== -->
+  <div class="bottom">
+
+    <!-- ===== Shot clock controls ===== -->
+    <div class="pane">
+      <h3>Shot clock — controls</h3>
+      <div class="row cols-2">
+        <button id="btn-start" class="start">▶ START <span class="legend">(Space)</span></button>
+        <button id="btn-stop"  class="stop" >■ PAUSE <span class="legend">(P)</span></button>
+      </div>
+
+      <h3>Reset / hide</h3>
+      <div class="row cols-3">
+        <button class="reset24" data-sc-reset="24">24 <span class="legend">(2)</span></button>
+        <button class="reset14" data-sc-reset="14">14 <span class="legend">(4)</span></button>
+        <button id="btn-hide" class="hide-btn">HIDE <span class="legend">(V)</span></button>
+      </div>
+
+      <h3>Adjust</h3>
+      <div class="adjust-grid">
+        <button data-sc-adjust="1000" ><span class="lbl">SEC</span>+ 1.0</button>
+        <button data-sc-adjust="100"  ><span class="lbl">TENTH</span>+ 0.1</button>
+        <button data-sc-adjust="-1000"><span class="lbl">SEC</span>− 1.0</button>
+        <button data-sc-adjust="-100" ><span class="lbl">TENTH</span>− 0.1</button>
+      </div>
+    </div>
+
+    <!-- ===== Toggles + recovery ===== -->
+    <div class="pane">
+      <h3>Modes</h3>
+      <button id="btn-indep" class="ghost" style="min-height:80px; font-size:20px;">
+        Independent: OFF <span class="legend">(I)</span>
+      </button>
+      <!-- SHOW lives here as a recovery action -- you only ever press it
+           when you've hit HIDE by mistake. Normal "un-hide" happens
+           automatically via the 24/14 reset. -->
+      <button id="btn-show"  class="ghost on-cyan" style="min-height:80px; font-size:22px; display:none">
+        ↺ SHOW shot clock <span class="legend">(V)</span>
+      </button>
+      <div class="legend" style="padding: 6px 4px; line-height: 1.4;">
+        HIDE (in the reset row) pauses the clock — press it every time the
+        ball touches the ring, then 24 / 14 when possession is resolved
+        (those auto-unhide). SHOW only appears here if you hid by mistake.
+        Independent decouples the shot clock from the game clock interlock.
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="status-strip">
+  <span id="ws-status">connecting…</span>
+  <span id="rtt-status"></span>
+  <span style="margin-left:auto">/shotclock-op — operator console</span>
+</div>
+
+<script src="/common.js"></script>
+<script>
+(() => {
+  "use strict";
+
+  const $ = (id) => document.getElementById(id);
+  const gameClockEl = $("game-clock");
+  const shotClockEl = $("shot-clock");
+  const gameRunEl   = $("game-run");
+  const shotRunEl   = $("shot-run");
+  const shotIndepEl = $("shot-indep");
+  const shotHiddenEl= $("shot-hidden");
+  const shotCardEl  = $("shot-card");
+  const hiddenBanner= $("hidden-banner");
+  const btnStart    = $("btn-start");
+  const btnStop     = $("btn-stop");
+  const btnIndep    = $("btn-indep");
+  const btnHide     = $("btn-hide");
+  const btnShow     = $("btn-show");
+  const wsStatusEl  = $("ws-status");
+  const rttStatusEl = $("rtt-status");
+
+  // ---------------------------------------------------------------------- //
+  // Render loop
+  // ---------------------------------------------------------------------- //
+  function render() {
+    const s = Scoreboard.getState();
+
+    // Game clock (read-only here)
+    const gMs = Scoreboard.computeDisplayedGameMs();
+    gameClockEl.textContent = Scoreboard.formatClock(gMs, { showTenths: true });
+    setRun(gameRunEl, !!(s && s.running), "Running", "Stopped");
+
+    // Shot clock
+    const scMs = Scoreboard.computeDisplayedShotMs();
+    const hidden = !!(s && s.sc_visible === false);
+    if (hidden) {
+      shotClockEl.textContent = Scoreboard.formatShot(scMs); // still show value to operator
+      shotClockEl.classList.add("hidden");
+      shotCardEl.classList.add("hidden");
+      hiddenBanner.style.display = "";
+    } else {
+      shotClockEl.textContent = Scoreboard.formatShot(scMs);
+      shotClockEl.classList.remove("hidden");
+      shotCardEl.classList.remove("hidden");
+      hiddenBanner.style.display = "none";
+    }
+    setRun(shotRunEl, !!(s && s.sc_running), "Running", "Stopped");
+
+    // Independent indicator (only visible when on).
+    if (s && s.sc_independent) {
+      shotIndepEl.style.display = "";
+      shotIndepEl.classList.remove("off");
+      shotIndepEl.classList.add("warn");
+    } else {
+      shotIndepEl.style.display = "none";
+      shotIndepEl.classList.remove("warn");
+      shotIndepEl.classList.add("off");
+    }
+    // Hidden indicator
+    if (hidden) {
+      shotHiddenEl.style.display = "";
+      shotHiddenEl.classList.remove("off");
+      shotHiddenEl.classList.add("danger");
+    } else {
+      shotHiddenEl.style.display = "none";
+      shotHiddenEl.classList.remove("danger");
+      shotHiddenEl.classList.add("off");
+    }
+
+    // Start/Stop armed states reflect effective shot-clock running.
+    // "Start" means "I want the shot clock enabled"; if sc_enabled is false,
+    // arm it. If it's enabled but currently held by the game-clock interlock
+    // (game stopped + not independent), it isn't actually running — but the
+    // operator's intent flag is on, so we still consider Start "in effect".
+    const enabled = !!(s && s.sc_enabled);
+    btnStart.classList.toggle("armed", !enabled);
+    btnStop.classList.toggle("armed",   enabled);
+
+    // Independent toggle label
+    if (s) {
+      btnIndep.firstChild && (btnIndep.childNodes[0].nodeValue =
+        s.sc_independent ? "Independent: ON " : "Independent: OFF ");
+      btnIndep.classList.toggle("on", !!s.sc_independent);
+    }
+
+    // HIDE button is always present in the reset row (the operator's main
+    // between-plays action). SHOW only appears in the Modes pane when the
+    // clock is currently hidden -- as a recovery slot for accidental HIDEs.
+    // A subtle "armed" glow on HIDE signals "the clock is hidden right
+    // now"; the primary visual cue is still the big HIDDEN banner over
+    // the clock face.
+    btnHide.classList.toggle("armed", hidden);
+    btnShow.style.display = hidden ? "" : "none";
+
+    requestAnimationFrame(render);
+  }
+  function setRun(el, on, onText, offText) {
+    el.classList.toggle("on", on);
+    el.classList.toggle("off", !on);
+    const lbl = el.querySelector(".lbl");
+    if (lbl) lbl.textContent = on ? onText : offText;
+  }
+
+  // ---------------------------------------------------------------------- //
+  // Status display
+  // ---------------------------------------------------------------------- //
+  Scoreboard.onStatus(({ status }) => {
+    wsStatusEl.textContent = status === "open" ? "● live"
+                           : status === "connecting" ? "connecting…"
+                           : "● disconnected";
+    wsStatusEl.style.color = status === "open" ? "var(--green-2)"
+                            : status === "connecting" ? "var(--muted)"
+                            : "var(--red-2)";
+  });
+  setInterval(() => {
+    const rtt = Scoreboard.getBestRttMs();
+    rttStatusEl.textContent = isFinite(rtt) ? `RTT ${rtt.toFixed(0)}ms` : "";
+  }, 1000);
+
+  // ---------------------------------------------------------------------- //
+  // Wire buttons
+  //
+  // "Start" / "Pause" map to sc_enable / sc_disable — i.e. the operator's
+  // intent switch. The game-clock interlock is still in effect: if the game
+  // clock is stopped and Independent is OFF, the shot clock stays "armed"
+  // but doesn't actually count down. Independent decouples from the
+  // interlock. This matches the existing main control panel's semantics
+  // exactly.
+  // ---------------------------------------------------------------------- //
+  btnStart.addEventListener("click", () => Scoreboard.sendCommand("sc_enable"));
+  btnStop .addEventListener("click", () => Scoreboard.sendCommand("sc_disable"));
+  btnIndep.addEventListener("click", () => Scoreboard.sendCommand("sc_toggle_independent"));
+  btnHide .addEventListener("click", () => Scoreboard.sendCommand("sc_hide"));
+  btnShow .addEventListener("click", () => Scoreboard.sendCommand("sc_show"));
+
+  document.querySelectorAll("[data-sc-reset]").forEach(b => {
+    const v = b.dataset.scReset;
+    b.addEventListener("click", () =>
+      Scoreboard.sendCommand(v === "24" ? "sc_reset_24" : "sc_reset_14"));
+  });
+  document.querySelectorAll("[data-sc-adjust]").forEach(b => {
+    b.addEventListener("click", () =>
+      Scoreboard.sendCommand("sc_adjust", { delta_ms: Number(b.dataset.scAdjust) }));
+  });
+
+  // ---------------------------------------------------------------------- //
+  // Keyboard shortcuts
+  //
+  //   Space       -> sc_enable      (start)
+  //   P           -> sc_disable     (pause)
+  //   2 / 4       -> reset to 24 / 14
+  //   ArrowR/L    -> ± 1 second
+  //   Shift+R/L   -> ± 0.1 second
+  //   I           -> toggle independent
+  //   V           -> toggle visibility (hide/show)
+  //
+  // ---------------------------------------------------------------------- //
+  document.addEventListener("keydown", (e) => {
+    if (e.target && e.target.tagName === "INPUT") return;
+    if (e.repeat) return;
+    const k = e.key;
+    if (e.code === "Space")        { e.preventDefault(); Scoreboard.sendCommand("sc_enable"); }
+    else if (k === "p" || k === "P") Scoreboard.sendCommand("sc_disable");
+    else if (k === "2")              Scoreboard.sendCommand("sc_reset_24");
+    else if (k === "4")              Scoreboard.sendCommand("sc_reset_14");
+    else if (k === "ArrowRight") {
+      Scoreboard.sendCommand("sc_adjust",
+        { delta_ms: e.shiftKey ? 100 : 1000 });
+    }
+    else if (k === "ArrowLeft") {
+      Scoreboard.sendCommand("sc_adjust",
+        { delta_ms: e.shiftKey ? -100 : -1000 });
+    }
+    else if (k === "i" || k === "I") Scoreboard.sendCommand("sc_toggle_independent");
+    else if (k === "v" || k === "V") Scoreboard.sendCommand("sc_toggle_visible");
+  });
+
+  // ---------------------------------------------------------------------- //
+  // Boot
+  // ---------------------------------------------------------------------- //
+  Scoreboard.connect();
+  requestAnimationFrame(render);
+})();
+</script>
+</body>
+</html>
