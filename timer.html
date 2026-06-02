@@ -242,11 +242,8 @@
         <button id="btn-stop"  class="stop"  data-action="stop_game" >■ PAUSE <span class="key-hint"></span></button>
       </div>
       <h3>Quick reset</h3>
-      <div class="row cols-4">
-        <button class="preset" data-set-ms="1200000">20:00</button>
-        <button class="preset" data-set-ms="900000" >15:00</button>
-        <button class="preset" data-set-ms="600000" >10:00</button>
-        <button class="preset" data-set-ms="120000" >2:00</button>
+      <div class="row" id="timer-clock-presets" style="flex-wrap:wrap">
+        <!-- populated from /api/config clock_presets -->
       </div>
       <h3>Adjust</h3>
       <div class="adjust-grid">
@@ -420,11 +417,24 @@
   btnStart.addEventListener("click",   () => Scoreboard.sendCommand("start"));
   btnStop .addEventListener("click",   () => Scoreboard.sendCommand("stop"));
 
-  // Preset times
-  document.querySelectorAll("[data-set-ms]").forEach(b => {
-    b.addEventListener("click", () =>
-      Scoreboard.sendCommand("set_time", { value_ms: Number(b.dataset.setMs) }));
-  });
+  // Clock presets — loaded from /api/config
+  (async () => {
+    const FALLBACK = [1200000, 900000, 600000, 300000, 120000];
+    let presets = FALLBACK;
+    try {
+      const cfg = await fetch("/api/config").then(r => r.json());
+      presets = cfg.clock_presets || FALLBACK;
+    } catch {}
+    const row = document.getElementById("timer-clock-presets");
+    presets.forEach(ms => {
+      const btn = document.createElement("button");
+      btn.className = "preset";
+      btn.textContent = Scoreboard.formatClock(ms, {});
+      btn.addEventListener("click", () =>
+        Scoreboard.sendCommand("set_time", { value_ms: ms }));
+      row.appendChild(btn);
+    });
+  })();
   // +/- adjust on game clock
   document.querySelectorAll("[data-adjust-ms]").forEach(b => {
     b.addEventListener("click", () =>

@@ -17,6 +17,10 @@ _DEFAULTS: dict[str, Any] = {
     "periods":      [p.to_dict() for p in _default_periods()],
     "timeout_mode": "remaining",
     "timeout_max":  3,
+    # Game-clock quick-reset presets in milliseconds.
+    # Edit config.json (or use "Save as default" after changing via UI) to
+    # add, remove, or reorder. Shown on master.html, timer.html, control.html.
+    "clock_presets": [1200000, 900000, 600000, 300000, 120000],  # 20,15,10,5,2 min
 }
 
 

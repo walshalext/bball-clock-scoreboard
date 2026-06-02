@@ -270,11 +270,8 @@
         <input type="number" id="set-sec" min="0" max="59" value="0" /></div>
       <div style="flex:1 1 0"><button id="btn-set-time" style="width:100%">Set time</button></div>
     </div>
-    <div class="row" style="margin-top:6px">
-      <button class="warn" data-set-ms="1200000">20:00</button>
-      <button class="warn" data-set-ms="900000">15:00</button>
-      <button class="warn" data-set-ms="600000">10:00</button>
-      <button class="warn" data-set-ms="120000">2:00</button>
+    <div class="row" id="ctrl-clock-presets" style="margin-top:6px;flex-wrap:wrap">
+      <!-- populated from /api/config clock_presets -->
     </div>
     <div class="row tight" style="margin-top:4px">
       <button class="small" data-set-ms="60000">1:00</button>
@@ -895,11 +892,31 @@ $("btn-set-time").addEventListener("click", () => {
   const seconds = parseFloat($("set-sec").value) || 0;
   Scoreboard.sendCommand("set_time", { minutes, seconds });
 });
+// Small hardcoded fine-tune presets (not shared config)
 document.querySelectorAll("button[data-set-ms]").forEach((b) => {
   b.addEventListener("click", () => {
     Scoreboard.sendCommand("set_time", { value_ms: Number(b.dataset.setMs) });
   });
 });
+
+// Clock presets — loaded from /api/config so changes persist without code edits
+(async () => {
+  const FALLBACK = [1200000, 900000, 600000, 300000, 120000];
+  let presets = FALLBACK;
+  try {
+    const cfg = await fetch("/api/config").then(r => r.json());
+    presets = cfg.clock_presets || FALLBACK;
+  } catch {}
+  const row = document.getElementById("ctrl-clock-presets");
+  presets.forEach(ms => {
+    const btn = document.createElement("button");
+    btn.className = "warn";
+    btn.textContent = Scoreboard.formatClock(ms, {});
+    btn.addEventListener("click", () =>
+      Scoreboard.sendCommand("set_time", { value_ms: ms }));
+    row.appendChild(btn);
+  });
+})();
 
 $("btn-sc-toggle").addEventListener("click", () => Scoreboard.sendCommand("sc_toggle"));
 $("btn-sc-independent").addEventListener("click",

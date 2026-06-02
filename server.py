@@ -491,9 +491,10 @@ async def api_save_config() -> dict[str, Any]:
     global _cfg
     snap = game.snapshot()
     new_cfg = {
-        "periods":      snap["periods"],
-        "timeout_mode": snap["timeout_mode"],
-        "timeout_max":  snap["timeout_max"],
+        "periods":       snap["periods"],
+        "timeout_mode":  snap["timeout_mode"],
+        "timeout_max":   snap["timeout_max"],
+        "clock_presets": _cfg.get("clock_presets", cfg_module._DEFAULTS["clock_presets"]),
     }
     await asyncio.to_thread(cfg_module.save, new_cfg)
     _cfg = new_cfg

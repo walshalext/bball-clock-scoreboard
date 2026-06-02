@@ -300,7 +300,14 @@
       shotCardEl.classList.remove("hidden");
       hiddenBanner.style.display = "none";
     }
-    setRun(shotRunEl, !!(s && s.sc_running), "Running", "Stopped");
+    // Shot clock pill: three states — running / waiting on game clock / stopped
+    if (s && s.sc_running) {
+      setShotPill("on", "Running");
+    } else if (s && s.sc_enabled && !s.sc_independent && !s.running) {
+      setShotPill("warn", "Game paused");
+    } else {
+      setShotPill("off", "Stopped");
+    }
 
     // Independent indicator (only visible when on).
     if (s && s.sc_independent) {
@@ -350,6 +357,14 @@
 
     requestAnimationFrame(render);
   }
+  function setShotPill(cls, label) {
+    shotRunEl.classList.toggle("on",   cls === "on");
+    shotRunEl.classList.toggle("warn", cls === "warn");
+    shotRunEl.classList.toggle("off",  cls === "off");
+    const lbl = shotRunEl.querySelector(".lbl");
+    if (lbl) lbl.textContent = label;
+  }
+
   function setRun(el, on, onText, offText) {
     el.classList.toggle("on", on);
     el.classList.toggle("off", !on);
