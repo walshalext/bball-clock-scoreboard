@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Player Roster</title>
+  <link rel="stylesheet" href="/common.css" />
   <style>
     /* Standalone single-team player roster, intended to occupy a full
        dedicated display alongside the centre-only /scoreboard view.
@@ -26,7 +27,6 @@
       --white: #fff;
       --roster-cols: 4ch 1fr auto 4ch;
     }
-    * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; height: 100%; background: var(--bg);
                  color: var(--white); overflow: hidden;
                  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -34,10 +34,10 @@
 
     .stage {
       display: grid;
-      grid-template-rows: auto auto auto 1fr auto;
+      grid-template-rows: auto auto auto 1fr;
       gap: 1.5vh;
       padding: 2vh 3vw 3vh;
-      width: 100vw; height: 100vh;
+      width: 100vw; height: calc(100vh - var(--sb-height, 34px));
     }
 
     /* ---- Header (team name + score + period) ---- */
@@ -120,16 +120,6 @@
       text-shadow: 0 0 6px rgba(255,48,48,0.4);
     }
 
-    /* ---- Footer ---- */
-    .bottom {
-      display: flex; justify-content: space-between;
-      font-size: 1.5vh; color: var(--muted);
-    }
-    .conn-dot { display: inline-block; width: 1.1vh; height: 1.1vh;
-                border-radius: 50%; background: var(--muted);
-                margin-right: 0.6vh; vertical-align: middle; }
-    .conn-dot.ok  { background: var(--green); }
-    .conn-dot.bad { background: var(--red); }
   </style>
 </head>
 <body>
@@ -145,10 +135,6 @@
   <div></div> <!-- spacer so head sits flush with first row -->
   <div class="roster-body" id="roster"></div>
 
-  <div class="bottom">
-    <span><span class="conn-dot" id="conn-dot"></span><span id="conn-text">…</span></span>
-    <span id="latency">—</span>
-  </div>
 </div>
 
 <script src="/common.js"></script>
@@ -263,25 +249,6 @@ function applyState(s) {
 }
 Scoreboard.onState(applyState);
 
-// -------- Status + fullscreen --------
-Scoreboard.onStatus((e) => {
-  const dot = $("conn-dot"), txt = $("conn-text");
-  dot.className = "conn-dot";
-  if (e.status === "open") { dot.classList.add("ok"); txt.textContent = "live"; }
-  else if (e.status === "closed") { dot.classList.add("bad"); txt.textContent = "offline"; }
-  else { txt.textContent = e.status; }
-});
-setInterval(() => {
-  const rtt = Scoreboard.getBestRttMs();
-  $("latency").textContent = isFinite(rtt) ? `rtt ${rtt.toFixed(1)}ms` : "—";
-}, 500);
-
-document.addEventListener("keydown", (e) => {
-  if (e.key === "f" || e.key === "F") {
-    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
-    else document.exitFullscreen();
-  }
-});
 
 Scoreboard.connect();
 </script>

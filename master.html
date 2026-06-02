@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>Master</title>
+  <link rel="stylesheet" href="/common.css" />
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; padding: 0;
+      width: 100vw; height: 100vh; overflow: hidden;
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   Oxygen, Ubuntu, sans-serif;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ============================================================
+       Top-level 3-column grid
+       ============================================================ */
+    .board {
+      display: grid;
+      grid-template-columns: 1fr 1.15fr 1fr;
+      height: 100vh;
+      gap: 6px;
+      padding: 6px 6px calc(var(--sb-height, 34px) + 6px);
+    }
+
+    /* ============================================================
+       Cards
+       ============================================================ */
+    .card {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 14px; padding: 10px 14px;
+      display: flex; flex-direction: column; gap: 1vh;
+      min-height: 0;
+    }
+    .card h2 {
+      margin: 0; font-size: 11px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 2px;
+    }
+    .score-card { flex: 1; }
+    .clock-card { flex: 1; }
+
+    /* ============================================================
+       Team columns
+       ============================================================ */
+    .team-col {
+      display: flex; flex-direction: column;
+      gap: 6px; min-height: 0;
+    }
+
+    .team-name {
+      margin: 0; font-size: 11px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 2px;
+    }
+
+    .score-display {
+      font-size: 17vh; font-weight: 900; color: var(--red);
+      text-align: center; line-height: 1;
+      text-shadow: 0 0 14px rgba(255,48,48,0.5);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .score-btns {
+      display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px;
+    }
+
+    /* Fouls and T/O rows */
+    .ctrl-row {
+      display: flex; gap: 6px; align-items: stretch;
+    }
+    .stat-box {
+      flex: 1 1 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 0.8vh 0.5vw; gap: 0.3vh;
+    }
+    .stat-box.bonus {
+      background: rgba(255,48,48,0.18);
+      border-color: var(--red);
+    }
+    .stat-num {
+      font-size: 5.5vh; font-weight: 900; color: var(--text); line-height: 1;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .stat-lbl {
+      font-size: 1.2vh; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.2em;
+    }
+
+    /* Time-out dots inside stat-box */
+    .tos { display: flex; gap: 0.6vw; align-items: center; }
+    .to-dot {
+      width: 2.8vh; height: 2.8vh; border-radius: 50%;
+      background: var(--panel-3); border: 1px solid var(--border);
+    }
+    .to-dot.on { background: var(--accent); border-color: var(--accent); }
+
+    /* ============================================================
+       Centre column
+       ============================================================ */
+    .centre-col {
+      display: flex; flex-direction: column;
+      gap: 6px; min-height: 0;
+    }
+
+    .period-row {
+      display: grid; grid-template-columns: 1fr auto 1fr;
+      gap: 1vw; align-items: center;
+    }
+    .period-display {
+      justify-self: center;
+      font-size: 4vh; font-weight: 900; color: var(--text);
+      padding: 0.6vh 1.6vw;
+      border: 0.3vh solid var(--text); border-radius: 0.8vh;
+      letter-spacing: 0.06em; line-height: 1; white-space: nowrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .game-clock {
+      font-size: 15vh; font-weight: 900; color: var(--accent);
+      text-align: center; line-height: 1;
+      text-shadow: 0 0 14px rgba(255,140,26,0.5);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .shot-row {
+      display: flex; gap: 1vw; align-items: stretch;
+    }
+    .shot-display {
+      min-width: 3.5ch; text-align: center;
+      font-size: 7vh; font-weight: 900; color: var(--red); line-height: 1;
+      text-shadow: 0 0 10px rgba(255,48,48,0.4);
+      align-self: center;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .shot-display.hidden { opacity: 0.25; }
+    .shot-btns { display: flex; flex-direction: column; gap: 1vh; flex: 1; }
+    .shot-btns button { flex: 1; }
+
+    .poss-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1vw; }
+
+    /* ============================================================
+       Shared button styles — large touch targets throughout
+       ============================================================ */
+    button {
+      background: var(--panel-2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 10px;
+      padding: 0 0.5vw; min-height: 8vh;
+      font-size: 2.8vh; font-weight: 700; font-family: inherit;
+      font-variant-numeric: tabular-nums;
+      cursor: pointer; touch-action: manipulation;
+      transition: background 0.08s, border-color 0.08s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    button:active { filter: brightness(1.3); }
+
+    button.primary { background: var(--green);  border-color: var(--green-2); }
+    button.danger  { background: var(--red);    border-color: var(--red-2);   }
+    button.warn    { background: var(--accent); border-color: var(--accent);  color: #1a1a1a; }
+    button.info    { background: var(--blue);   border-color: var(--blue);  }
+    button.ghost   { background: transparent; }
+    button.active  { background: var(--accent); border-color: var(--accent);  color: #1a1a1a; }
+    button.start   { background: var(--green);  border-color: var(--green-2); color: #fff; }
+    button.stop    { background: var(--red);    border-color: var(--red-2);   color: #fff; }
+    button.start.armed { box-shadow: 0 0 14px -2px var(--green-2); }
+    button.stop.armed  { box-shadow: 0 0 14px -2px var(--red-2);   }
+    button.hide-btn { background: #3a2a14; border-color: var(--accent);
+                      color: var(--accent); letter-spacing: 2px; }
+    button.hide-btn.armed { box-shadow: 0 0 14px -2px var(--accent); }
+
+    /* Score buttons get extra height */
+    .score-btns button { min-height: 10vh; font-size: 3.5vh; }
+
+    /* Game clock start/stop row */
+    .game-start-stop { display: grid; grid-template-columns: 1fr 1fr; gap: 1vw; }
+    .game-start-stop button { min-height: 12vh; font-size: 4vh; letter-spacing: 0.08em; }
+
+    /* Shot clock button grid: [start | stop] / [24 | 14] / [hide] */
+    .shot-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 1vh 1vw; flex: 1; }
+    #btn-sc-hide { grid-column: 1 / -1; }
+
+    /* ============================================================
+       Edge lights
+       ============================================================ */
+    .edge-lights {
+      position: fixed; inset: 0; pointer-events: none; z-index: 60;
+      box-shadow: inset 0 0 0 0 transparent;
+      transition: box-shadow 0.15s ease-out;
+    }
+    .edge-lights.flash-period {
+      box-shadow: inset 0 0 0 2.5vh rgba(255,48,48,0.95),
+                  inset 0 0 14vh rgba(255,48,48,0.55);
+    }
+    .edge-lights.flash-shot {
+      box-shadow: inset 0 0 0 2.5vh rgba(255,210,51,0.95),
+                  inset 0 0 14vh rgba(255,210,51,0.55);
+    }
+  </style>
+</head>
+<body>
+
+<div class="board">
+
+  <!-- ======================================================= HOME -->
+  <div class="team-col" id="home-col">
+    <div class="team-name" id="home-name">HOME</div>
+
+    <div class="score-display" id="home-score">0</div>
+
+    <div class="score-btns">
+      <button class="warn" data-team="home" data-pts="1">+1</button>
+      <button class="warn" data-team="home" data-pts="2">+2</button>
+      <button class="warn" data-team="home" data-pts="3">+3</button>
+      <button         data-team="home" data-pts="-1">−1</button>
+    </div>
+
+    <div class="ctrl-row">
+      <div class="stat-box" id="home-fouls-box">
+        <span class="stat-num" id="home-fouls">0</span>
+        <span class="stat-lbl" id="home-fouls-lbl">Fouls</span>
+      </div>
+      <button data-team="home" data-act="foul-add">+F</button>
+      <button data-team="home" data-act="foul-sub">−F</button>
+      <button data-team="home" data-act="bonus-toggle" id="home-bonus-btn" class="ghost">Bonus</button>
+    </div>
+
+    <div class="ctrl-row">
+      <div class="stat-box">
+        <div class="tos" id="home-tos"></div>
+        <span class="stat-lbl">T/O</span>
+      </div>
+      <button data-team="home" data-act="to-add">+TO</button>
+      <button data-team="home" data-act="to-sub">−TO</button>
+    </div>
+  </div>
+
+  <!-- ======================================================= CENTRE -->
+  <div class="centre-col">
+
+    <div class="period-row">
+      <button id="btn-period-down">−</button>
+      <div class="period-display" id="period-display">PRE</div>
+      <button id="btn-period-up">+</button>
+    </div>
+
+    <div class="game-clock" id="game-clock">10:00</div>
+
+    <div class="game-start-stop">
+      <button id="btn-start" class="start" data-action="start_game">▶ START <span class="key-hint"></span></button>
+      <button id="btn-stop"  class="stop"  data-action="stop_game" >■ STOP <span class="key-hint"></span></button>
+    </div>
+
+    <div class="shot-row">
+      <div class="shot-display" id="shot-display">24</div>
+      <div class="shot-btns">
+        <button id="btn-sc-start" class="start"    data-action="sc_enable"  >▶ SC <span class="key-hint"></span></button>
+        <button id="btn-sc-stop"  class="stop"     data-action="sc_disable" >■ SC <span class="key-hint"></span></button>
+        <button id="btn-sc-24"                     data-action="sc_reset_24">24 <span class="key-hint"></span></button>
+        <button id="btn-sc-14"                     data-action="sc_reset_14">14 <span class="key-hint"></span></button>
+        <button id="btn-sc-hide"  class="hide-btn" data-action="sc_hide"    >HIDE <span class="key-hint"></span></button>
+      </div>
+    </div>
+
+    <div class="poss-row">
+      <button id="poss-left">◀</button>
+      <button id="poss-off">— OFF —</button>
+      <button id="poss-right">▶</button>
+    </div>
+
+  </div>
+
+  <!-- ======================================================= AWAY -->
+  <div class="team-col" id="away-col">
+    <div class="team-name" id="away-name">AWAY</div>
+
+    <div class="score-display" id="away-score">0</div>
+
+    <div class="score-btns">
+      <button class="warn" data-team="away" data-pts="1">+1</button>
+      <button class="warn" data-team="away" data-pts="2">+2</button>
+      <button class="warn" data-team="away" data-pts="3">+3</button>
+      <button         data-team="away" data-pts="-1">−1</button>
+    </div>
+
+    <div class="ctrl-row">
+      <div class="stat-box" id="away-fouls-box">
+        <span class="stat-num" id="away-fouls">0</span>
+        <span class="stat-lbl" id="away-fouls-lbl">Fouls</span>
+      </div>
+      <button data-team="away" data-act="foul-add">+F</button>
+      <button data-team="away" data-act="foul-sub">−F</button>
+      <button data-team="away" data-act="bonus-toggle" id="away-bonus-btn" class="ghost">Bonus</button>
+    </div>
+
+    <div class="ctrl-row">
+      <div class="stat-box">
+        <div class="tos" id="away-tos"></div>
+        <span class="stat-lbl">T/O</span>
+      </div>
+      <button data-team="away" data-act="to-add">+TO</button>
+      <button data-team="away" data-act="to-sub">−TO</button>
+    </div>
+  </div>
+
+</div><!-- .board -->
+
+<div id="edge-lights" class="edge-lights"></div>
+
+<script src="/common.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const TEAMS = ["home", "away"];
+
+// -------- Score and team action buttons (event delegation) --------
+document.querySelector(".board").addEventListener("click", (e) => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+
+  // Score buttons
+  if (btn.dataset.pts !== undefined) {
+    Scoreboard.sendCommand("add_score", {
+      team:   btn.dataset.team,
+      points: +btn.dataset.pts,
+    });
+    return;
+  }
+
+  // Action buttons
+  const act  = btn.dataset.act;
+  const team = btn.dataset.team;
+  if (!act) return;
+  const s = Scoreboard.getState();
+
+  switch (act) {
+    case "foul-add":
+      Scoreboard.sendCommand("add_team_foul", { team }); break;
+    case "foul-sub": {
+      const cur = s?.[team]?.team_fouls || 0;
+      Scoreboard.sendCommand("set_team_foul", { team, value: Math.max(0, cur - 1) }); break;
+    }
+    case "bonus-toggle":
+      Scoreboard.sendCommand("set_bonus", { team, on: !(s?.[team]?.bonus) }); break;
+    case "to-add":
+      Scoreboard.sendCommand("add_timeout", { team }); break;
+    case "to-sub": {
+      const cur = s?.[team]?.timeouts_taken || 0;
+      Scoreboard.sendCommand("set_timeouts", { team, taken: Math.max(0, cur - 1) }); break;
+    }
+  }
+});
+
+// -------- Centre controls --------
+$("btn-period-down").addEventListener("click",  () => Scoreboard.sendCommand("adjust_period", { delta: -1 }));
+$("btn-period-up").addEventListener("click",   () => Scoreboard.sendCommand("adjust_period", { delta:  1 }));
+$("btn-start").addEventListener("click",       () => Scoreboard.sendCommand("start"));
+$("btn-stop").addEventListener("click",        () => Scoreboard.sendCommand("stop"));
+$("btn-sc-start").addEventListener("click",    () => Scoreboard.sendCommand("sc_enable"));
+$("btn-sc-stop").addEventListener("click",     () => Scoreboard.sendCommand("sc_disable"));
+$("btn-sc-24").addEventListener("click",       () => Scoreboard.sendCommand("sc_reset_24"));
+$("btn-sc-14").addEventListener("click",       () => Scoreboard.sendCommand("sc_reset_14"));
+$("btn-sc-hide").addEventListener("click",     () => Scoreboard.sendCommand("sc_toggle_visible"));
+$("poss-left").addEventListener("click",       () => Scoreboard.sendCommand("set_possession", { direction: "left"  }));
+$("poss-off").addEventListener("click",        () => Scoreboard.sendCommand("set_possession", { direction: "off"   }));
+$("poss-right").addEventListener("click",      () => Scoreboard.sendCommand("set_possession", { direction: "right" }));
+
+// -------- Apply state snapshot --------
+function applyState(s) {
+  for (const side of TEAMS) {
+    const t = s[side];
+
+    $(`${side}-name`).textContent  = (t.name || side).toUpperCase();
+    $(`${side}-score`).textContent = t.score;
+
+    // Fouls + bonus
+    $(`${side}-fouls`).textContent = t.team_fouls;
+    $(`${side}-fouls-box`).classList.toggle("bonus", !!t.bonus);
+    $(`${side}-fouls-lbl`).textContent = t.bonus ? "BONUS" : "Fouls";
+    const bonusBtn = $(`${side}-bonus-btn`);
+    bonusBtn.classList.toggle("danger", !!t.bonus);
+    bonusBtn.classList.toggle("ghost",  !t.bonus);
+
+    // Time-out dots
+    const info = Scoreboard.computeTimeoutDots(side, s);
+    const tosEl = $(`${side}-tos`);
+    const sig = `${info.filled}/${info.max}`;
+    if (tosEl.dataset.sig !== sig) {
+      tosEl.innerHTML = "";
+      for (let i = 0; i < info.max; i++) {
+        const d = document.createElement("div");
+        d.className = "to-dot" + (i < info.filled ? " on" : "");
+        tosEl.appendChild(d);
+      }
+      tosEl.dataset.sig = sig;
+    }
+  }
+
+  // Period
+  $("period-display").textContent = s.period_short || String(s.period_indicator || "—");
+
+  // Game clock start / stop armed states
+  const running = !!s.running;
+  $("btn-start").classList.toggle("armed", !running);
+  $("btn-stop").classList.toggle("armed",   running);
+
+  // Shot clock start / stop armed states
+  const scOn = !!s.sc_enabled;
+  $("btn-sc-start").classList.toggle("armed", !scOn);
+  $("btn-sc-stop").classList.toggle("armed",   scOn);
+
+  // Shot clock hide/show
+  const hidden = !s.sc_visible;
+  const hideBtn = $("btn-sc-hide");
+  hideBtn.classList.toggle("armed", hidden);
+  hideBtn.childNodes[0].nodeValue = hidden ? "SHOW " : "HIDE ";
+
+  // Possession
+  $("poss-left").classList.toggle("warn",  s.possession === "left");
+  $("poss-off").classList.toggle("warn",   s.possession === "off");
+  $("poss-right").classList.toggle("warn", s.possession === "right");
+}
+Scoreboard.onState(applyState);
+
+// -------- Clock animation --------
+function tick() {
+  const s = Scoreboard.getState();
+  if (s) {
+    $("game-clock").textContent = Scoreboard.formatClock(
+      Scoreboard.computeDisplayedGameMs(), { showTenths: true });
+
+    const sd = $("shot-display");
+    if (s.sc_visible) {
+      sd.textContent = Scoreboard.formatShot(Scoreboard.computeDisplayedShotMs());
+      sd.classList.remove("hidden");
+    } else {
+      sd.textContent = "—";
+      sd.classList.add("hidden");
+    }
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+// -------- Buzzer --------
+Scoreboard.onBuzzer((b) => {
+  const el = $("edge-lights");
+  if (b.kind === "period") {
+    el.classList.add("flash-period");
+    setTimeout(() => el.classList.remove("flash-period"), 2000);
+  } else if (b.kind === "shot_clock") {
+    el.classList.add("flash-shot");
+    setTimeout(() => el.classList.remove("flash-shot"), 1000);
+  }
+});
+
+Scoreboard.connect();
+</script>
+</body>
+</html>

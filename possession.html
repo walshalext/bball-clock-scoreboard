@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Possession Arrow</title>
+  <link rel="stylesheet" href="/common.css" />
   <style>
     /* FIBA §9: alternating possession arrow, illuminated bright red.
        Direction-only (decoupled from teams); the operator picks Left,
@@ -17,14 +18,13 @@
       --muted: #666;
       --dim: #333;
     }
-    * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; height: 100%; background: var(--bg);
                  color: var(--red); overflow: hidden;
                  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
     /* Stage: header at top, gigantic arrow filling the rest, footer at bottom. */
-    .stage { width: 100vw; height: 100vh;
-             display: grid; grid-template-rows: auto 1fr auto;
+    .stage { width: 100vw; height: calc(100vh - var(--sb-height, 34px));
+             display: grid; grid-template-rows: auto 1fr;
              padding: 1.5vh 2vw; gap: 1vh; }
 
     .header { display: flex; align-items: center; justify-content: space-between;
@@ -69,11 +69,6 @@
     }
     .off-state.shown { opacity: 1; }
 
-    .footer { display: flex; justify-content: space-between; align-items: center;
-              font-size: 1.6vh; color: var(--muted); padding: 0 1vw; }
-    .conn-dot { display: inline-block; width: 1.2vh; height: 1.2vh; border-radius: 50%;
-                background: var(--muted); margin-right: 0.6vh; vertical-align: middle; }
-    .conn-dot.ok { background: #2ea043; } .conn-dot.bad { background: var(--red); }
   </style>
 </head>
 <body>
@@ -97,10 +92,6 @@
       <div id="off-state" class="off-state">Possession not set</div>
     </div>
 
-    <div class="footer">
-      <span><span class="conn-dot" id="conn-dot"></span><span id="conn-text">…</span></span>
-      <span id="latency">—</span>
-    </div>
   </div>
 
   <script src="/common.js"></script>
@@ -146,26 +137,6 @@
     }
     Scoreboard.onState(applyState);
 
-    // ----- connection + latency + fullscreen -----
-    Scoreboard.onStatus((e) => {
-      const dot = $("conn-dot"), txt = $("conn-text"); dot.className = "conn-dot";
-      if (e.status === "open") { dot.classList.add("ok"); txt.textContent = "live"; }
-      else if (e.status === "closed") { dot.classList.add("bad"); txt.textContent = "offline"; }
-      else { txt.textContent = e.status; }
-    });
-    setInterval(() => {
-      const rtt = Scoreboard.getBestRttMs();
-      $("latency").textContent = isFinite(rtt) ? `rtt ${rtt.toFixed(1)}ms` : "—";
-    }, 500);
-
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "f" || e.key === "F") {
-        if (!document.fullscreenElement) document.documentElement.requestFullscreen();
-        else document.exitFullscreen();
-      } else if (e.key === "i" || e.key === "I") {
-        setInvert(!getInvert());
-      }
-    });
 
     Scoreboard.connect();
   </script>

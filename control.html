@@ -4,23 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Scoreboard Control</title>
+  <link rel="stylesheet" href="/common.css" />
   <style>
-    :root {
-      --bg: #0e1116;
-      --panel: #161b22;
-      --panel-2: #1f262f;
-      --panel-3: #28303a;
-      --border: #2a313c;
-      --text: #e6edf3;
-      --muted: #8b949e;
-      --accent: #ff8c1a;
-      --accent-dim: #b96712;
-      --green: #2ea043;
-      --red: #da3633;
-      --yellow: #d4a017;
-      --blue: #2f81f7;
-    }
-    * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
                  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
                               Oxygen, Ubuntu, sans-serif; }
@@ -113,9 +98,14 @@
 
     /* Roster */
     .roster { display: grid; grid-template-columns: 1fr; gap: 4px; margin-top: 6px; }
+    :root { --ctrl-roster-cols: 24px 44px 1fr 42px 48px auto auto auto auto auto auto auto 28px; }
+    body.simple-mode { --ctrl-roster-cols: 24px 44px 1fr 42px auto auto auto 28px; }
+    body.simple-mode .roster-row .pts,
+    body.simple-mode .roster-row [data-act="ppts"] { display: none; }
+
     .roster-row {
       display: grid;
-      grid-template-columns: 24px 44px 1fr 42px 48px auto auto auto auto auto auto auto 28px;
+      grid-template-columns: var(--ctrl-roster-cols);
       gap: 3px; align-items: center;
       background: var(--panel-2); border: 1px solid var(--border);
       border-radius: 6px; padding: 4px;
@@ -164,6 +154,39 @@
                   padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border);
                   font-size: 12px; }
     .link-row a:hover { background: var(--panel-3); }
+
+    .reset-panel { display: flex; align-items: center; gap: 12px; }
+    .reset-panel .reset-copy { flex: 1 1 auto; min-width: 180px; }
+    .reset-panel .reset-action { flex: 0 0 auto; min-width: 150px; }
+    @media (max-width: 520px) {
+      .reset-panel { align-items: stretch; flex-direction: column; }
+      .reset-panel .reset-action { width: 100%; }
+    }
+
+    .modal-backdrop {
+      position: fixed; inset: 0; z-index: 1000; display: none;
+      align-items: center; justify-content: center;
+      background: rgba(0, 0, 0, 0.72); padding: 16px;
+    }
+    .modal-backdrop.open { display: flex; }
+    .confirm-modal {
+      width: min(460px, 100%);
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 10px; padding: 16px;
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
+    }
+    .confirm-modal h2 { color: var(--red); margin-bottom: 10px; }
+    .confirm-modal p { margin: 0 0 12px; color: var(--text); line-height: 1.4; }
+    .hold-reset {
+      --hold: 0%;
+      position: relative; overflow: hidden; border-color: var(--red);
+      min-height: 46px; touch-action: none;
+    }
+    .hold-reset::before {
+      content: ""; position: absolute; inset: 0 auto 0 0; width: var(--hold);
+      background: var(--red); transition: width .08s linear;
+    }
+    .hold-reset span { position: relative; z-index: 1; }
   </style>
 </head>
 <body>
@@ -179,11 +202,45 @@
   <a href="/timer" target="_blank">/timer (op)</a>
   <a href="/shot" target="_blank">/shot</a>
   <a href="/shotclock-op" target="_blank">/shotclock-op (op)</a>
+  <a href="/master" target="_blank">/master (touch)</a>
   <a href="/visuals" target="_blank">/visuals (op)</a>
   <a href="/possession" target="_blank">/possession</a>
   <a href="/arrow" target="_blank">/arrow (op)</a>
   <a href="/fouls?team=home" target="_blank">/fouls?team=home</a>
   <a href="/fouls?team=away" target="_blank">/fouls?team=away</a>
+</div>
+
+<div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+  <button id="btn-simple-mode" class="small ghost">Simple mode: OFF</button>
+  <span class="hint">Hides per-player point tracking.</span>
+</div>
+
+<div class="panel compact reset-panel">
+  <div class="reset-copy">
+    <h2>New game</h2>
+    <div class="hint">Full reset to defaults for a blank slate.</div>
+  </div>
+  <button id="btn-reset-open" class="danger reset-action">Full reset</button>
+</div>
+
+<div id="reset-modal" class="modal-backdrop" role="dialog" aria-modal="true"
+     aria-labelledby="reset-title" aria-hidden="true">
+  <div class="confirm-modal">
+    <h2 id="reset-title">Reset everything?</h2>
+    <p>
+      This clears scores, fouls, time-outs, rosters, clocks, possession, period
+      setup, and team names back to defaults.
+    </p>
+    <div class="row">
+      <button id="btn-reset-cancel">Cancel</button>
+      <button id="btn-reset-hold" class="hold-reset">
+        <span>Hold 5s to reset</span>
+      </button>
+    </div>
+    <div id="reset-hold-status" class="hint" style="margin-top:8px">
+      Press and hold the reset button for 5 seconds.
+    </div>
+  </div>
 </div>
 
 <!-- GAME CLOCK + SHOT CLOCK -->
@@ -399,16 +456,19 @@
     <button id="btn-apply-periods" class="info">Apply period list</button>
     <button id="btn-reset-periods">Restore defaults</button>
   </div>
+  <div class="row" style="margin-top:8px; align-items:center">
+    <button id="btn-save-config" class="info">Save as default</button>
+    <span class="hint" id="save-config-status">
+      Saves the period list and time-out display settings to <code>config.json</code>.
+      Persists across restarts and full resets.
+    </span>
+  </div>
 </details>
 
-<div class="status">
-  <span><span id="conn-dot" class="dot"></span><span id="conn-text">connecting…</span></span>
-  <span id="latency">rtt — ms</span>
-</div>
-
 <div class="hint" style="margin-top:6px">
-  Shortcuts: <strong>Space</strong> start/stop game clock · <strong>S</strong> toggle shot-clock switch ·
-  <strong>I</strong> toggle independent · <strong>2</strong>/<strong>4</strong> reset shot to 24/14 ·
+  Shortcuts: <strong>Space</strong> start/stop game clock · <strong>T</strong> start/stop time-out clock ·
+  <strong>S</strong> toggle shot-clock switch · <strong>I</strong> toggle independent ·
+  <strong>2</strong>/<strong>4</strong> reset shot to 24/14 ·
   <strong>←</strong>/<strong>→</strong> possession left/right ·
   <strong>↑</strong>/<strong>↓</strong> possession off.
 </div>
@@ -674,14 +734,10 @@ function applyState(s) {
 
     // Roster
     const rosterEl = root.querySelector(`[data-bind="roster"]`);
-    if (!rosterEl.dataset.built || +rosterEl.dataset.built !== team.players.length) {
-      rosterEl.innerHTML = team.players.map((p, i) => rosterRowHTML(side, i, p)).join("");
-      rosterEl.dataset.built = team.players.length;
-    } else {
-      // Update existing rows in place to avoid clobbering focused inputs.
-      team.players.forEach((p, i) => {
-        const row = rosterEl.children[i];
-        if (!row) return;
+    Scoreboard.patchRoster(
+      rosterEl, team.players,
+      (p, i) => rosterRowHTML(side, i, p),
+      (row, p) => {
         const played = p.played !== false;
         row.classList.toggle("disqualified", !!p.disqualified);
         row.classList.toggle("notplayed", !played);
@@ -698,8 +754,8 @@ function applyState(s) {
         row.querySelector(`[data-bind="ppts"]`).textContent = played ? p.points : "—";
         row.querySelector(`button[data-act="dq"]`).classList.toggle("danger", !!p.disqualified);
         row.querySelector(`button[data-act="dq"]`).classList.toggle("ghost", !p.disqualified);
-      });
-    }
+      }
+    );
   }
 
   // Seed the periods editor on first state (and on operator "Restore
@@ -746,22 +802,89 @@ function tick() {
 }
 requestAnimationFrame(tick);
 
-setInterval(() => {
-  const rtt = Scoreboard.getBestRttMs();
-  $("latency").textContent = isFinite(rtt) ? `best rtt ${rtt.toFixed(1)} ms` : "rtt — ms";
-}, 250);
+// -------- Top-level buttons --------
+const RESET_HOLD_MS = 5000;
+let resetHoldStartedAt = 0;
+let resetHoldTimer = null;
+let resetHoldFrame = null;
 
-// -------- Connection status --------
-Scoreboard.onStatus((e) => {
-  const dot = $("conn-dot"), txt = $("conn-text");
-  dot.className = "dot";
-  if (e.status === "open")        { dot.classList.add("ok");   txt.textContent = "connected"; }
-  else if (e.status === "closed") { dot.classList.add("bad");  txt.textContent = "disconnected"; }
-  else if (e.status === "error")  { dot.classList.add("warn"); txt.textContent = "error"; }
-  else                            { dot.classList.add("warn"); txt.textContent = e.status; }
+function setResetHoldProgress(progress) {
+  const pct = Math.max(0, Math.min(1, progress)) * 100;
+  $("btn-reset-hold").style.setProperty("--hold", `${pct}%`);
+}
+
+function cancelResetHold() {
+  if (resetHoldTimer) clearTimeout(resetHoldTimer);
+  if (resetHoldFrame) cancelAnimationFrame(resetHoldFrame);
+  resetHoldTimer = null;
+  resetHoldFrame = null;
+  resetHoldStartedAt = 0;
+  setResetHoldProgress(0);
+  $("btn-reset-hold").querySelector("span").textContent = "Hold 5s to reset";
+  $("reset-hold-status").textContent =
+    "Press and hold the reset button for 5 seconds.";
+}
+
+function openResetModal() {
+  cancelResetHold();
+  $("reset-modal").classList.add("open");
+  $("reset-modal").setAttribute("aria-hidden", "false");
+  $("btn-reset-cancel").focus();
+}
+
+function closeResetModal() {
+  cancelResetHold();
+  $("reset-modal").classList.remove("open");
+  $("reset-modal").setAttribute("aria-hidden", "true");
+  $("btn-reset-open").focus();
+}
+
+function tickResetHold() {
+  if (!resetHoldStartedAt) return;
+  const elapsed = performance.now() - resetHoldStartedAt;
+  const remaining = Math.max(0, RESET_HOLD_MS - elapsed);
+  setResetHoldProgress(elapsed / RESET_HOLD_MS);
+  $("reset-hold-status").textContent =
+    `Keep holding... ${(remaining / 1000).toFixed(1)}s`;
+  resetHoldFrame = requestAnimationFrame(tickResetHold);
+}
+
+function completeResetHold() {
+  resetHoldStartedAt = 0;
+  if (resetHoldFrame) cancelAnimationFrame(resetHoldFrame);
+  resetHoldFrame = null;
+  resetHoldTimer = null;
+  setResetHoldProgress(100);
+  $("btn-reset-hold").querySelector("span").textContent = "Resetting...";
+  $("reset-hold-status").textContent = "Resetting game to defaults.";
+  Scoreboard.sendCommand("reset_game");
+  setTimeout(closeResetModal, 250);
+}
+
+$("btn-reset-open").addEventListener("click", openResetModal);
+$("btn-reset-cancel").addEventListener("click", closeResetModal);
+$("reset-modal").addEventListener("click", (e) => {
+  if (e.target === $("reset-modal")) closeResetModal();
+});
+$("btn-reset-hold").addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  cancelResetHold();
+  $("btn-reset-hold").setPointerCapture(e.pointerId);
+  resetHoldStartedAt = performance.now();
+  resetHoldTimer = setTimeout(completeResetHold, RESET_HOLD_MS);
+  tickResetHold();
+});
+for (const eventName of ["pointerup", "pointercancel", "pointerleave"]) {
+  $("btn-reset-hold").addEventListener(eventName, () => {
+    if (resetHoldStartedAt) cancelResetHold();
+  });
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && $("reset-modal").classList.contains("open")) {
+    closeResetModal();
+  }
 });
 
-// -------- Top-level buttons --------
 $("btn-toggle").addEventListener("click", () => Scoreboard.sendCommand("toggle"));
 $("btn-period-down").addEventListener("click", () => Scoreboard.sendCommand("adjust_period", { delta: -1 }));
 $("btn-period-up").addEventListener("click",   () => Scoreboard.sendCommand("adjust_period", { delta:  1 }));
@@ -871,19 +994,33 @@ $("to-max-2").addEventListener("click",
 $("to-max-3").addEventListener("click",
   () => Scoreboard.sendCommand("set_timeout_settings", { max_count: 3 }));
 
-// -------- Keyboard shortcuts --------
-document.addEventListener("keydown", (e) => {
-  if (e.target.tagName === "INPUT") return;
-  if (e.code === "Space") { e.preventDefault(); Scoreboard.sendCommand("toggle"); }
-  else if (e.key === "s" || e.key === "S") { Scoreboard.sendCommand("sc_toggle"); }
-  else if (e.key === "i" || e.key === "I") { Scoreboard.sendCommand("sc_toggle_independent"); }
-  else if (e.key === "2") { Scoreboard.sendCommand("sc_reset_24"); }
-  else if (e.key === "4") { Scoreboard.sendCommand("sc_reset_14"); }
-  else if (e.key === "ArrowLeft")  { Scoreboard.sendCommand("set_possession", { direction: "left"  }); }
-  else if (e.key === "ArrowRight") { Scoreboard.sendCommand("set_possession", { direction: "right" }); }
-  else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-    Scoreboard.sendCommand("set_possession", { direction: "off" });
+
+// -------- Save config --------
+$("btn-save-config").addEventListener("click", async () => {
+  const status = $("save-config-status");
+  status.textContent = "Saving…";
+  try {
+    const r = await fetch("/api/save-config", { method: "POST" });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    status.textContent = "Saved to config.json.";
+  } catch (e) {
+    status.textContent = `Error: ${e.message || e}`;
   }
+});
+
+// -------- Simple mode --------
+function applySimpleMode(on) {
+  document.body.classList.toggle("simple-mode", on);
+  const btn = $("btn-simple-mode");
+  btn.textContent = on ? "Simple mode: ON" : "Simple mode: OFF";
+  btn.classList.toggle("warn", on);
+  btn.classList.toggle("ghost", !on);
+}
+applySimpleMode(localStorage.getItem("simpleMode") === "1");
+$("btn-simple-mode").addEventListener("click", () => {
+  const next = !document.body.classList.contains("simple-mode");
+  localStorage.setItem("simpleMode", next ? "1" : "0");
+  applySimpleMode(next);
 });
 
 Scoreboard.connect();

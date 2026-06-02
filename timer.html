@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
   <title>Timer Op</title>
+  <link rel="stylesheet" href="/common.css" />
   <style>
     /* ------------------------------------------------------------------- *
      * Timer operator console.
@@ -15,24 +16,7 @@
      * - No hover-only feedback — every state has an explicit lit-up class.
      * - Disables iOS double-tap-to-zoom and text selection.
      * --------------------------------------------------------------------*/
-    :root {
-      --bg: #0e1116;
-      --panel: #161b22;
-      --panel-2: #1f262f;
-      --panel-3: #28303a;
-      --border: #2a313c;
-      --text: #e6edf3;
-      --muted: #8b949e;
-      --accent: #ff8c1a;
-      --green: #2ea043;
-      --green-2: #46c563;
-      --red: #da3633;
-      --red-2: #ff5247;
-      --yellow: #d4a017;
-      --cyan: #22d3ee;
-      --blue: #2f81f7;
-    }
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    * { -webkit-tap-highlight-color: transparent; }
     html, body {
       margin: 0; padding: 0; height: 100%; overflow: hidden;
       background: var(--bg); color: var(--text);
@@ -45,7 +29,7 @@
     /* ---- layout ---- */
     .app { display: grid;
            grid-template-rows: minmax(0, 52fr) minmax(0, 48fr);
-           height: 100vh; gap: 6px; padding: 6px; }
+           height: calc(100vh - var(--sb-height, 34px)); gap: 6px; padding: 6px; }
 
     /* ---- top: indicators ---- */
     .top {
@@ -135,11 +119,11 @@
     button.danger { background: #5a1011; border-color: var(--red); color: #fff; }
     button[disabled] { opacity: 0.4; cursor: not-allowed; }
 
-    /* Siren button — tall, very red. */
+    /* Siren button — fills the remaining pane height. */
     button.siren {
       background: var(--red); border-color: var(--red-2); color: #fff;
       font-size: 26px; letter-spacing: 2px;
-      min-height: 100%;
+      flex: 1;
     }
     button.siren.pressed {
       background: #ff2020; box-shadow: 0 0 28px -2px #ff5050, inset 0 0 24px #ff8080;
@@ -202,11 +186,6 @@
       100%   { background: transparent; }
     }
 
-    .status-strip {
-      position: fixed; bottom: 4px; left: 6px; right: 6px;
-      display: flex; gap: 14px; font-size: 10px; color: var(--muted);
-      pointer-events: none; opacity: 0.7;
-    }
     .legend { font-size: 10px; color: var(--muted); padding: 2px 4px;
               text-transform: uppercase; letter-spacing: 1.5px; }
   </style>
@@ -228,6 +207,17 @@
       <div class="clock-big clock-game" id="game-clock">00:00</div>
     </div>
 
+    <!-- Time-out clock -->
+    <div class="card to" id="to-card">
+      <h2>
+        <span>Time-out</span>
+        <span id="to-run" class="run-pill off">
+          <span class="led"></span><span class="lbl">Stopped</span>
+        </span>
+      </h2>
+      <div class="clock-big clock-to" id="to-clock">1:00</div>
+    </div>
+
     <!-- Shot clock (read-only on this view) -->
     <div class="card">
       <h2>
@@ -239,20 +229,6 @@
       <div class="clock-big clock-shot" id="shot-clock">24</div>
     </div>
 
-    <!-- Time-out clock -->
-    <div class="card to" id="to-card">
-      <h2>
-        <span>Time-out</span>
-        <span id="to-run" class="run-pill off">
-          <span class="led"></span><span class="lbl">Stopped</span>
-        </span>
-        <span id="siren-pill" class="run-pill off" style="display:none">
-          <span class="led"></span><span class="lbl">SIREN</span>
-        </span>
-      </h2>
-      <div class="clock-big clock-to" id="to-clock">1:00</div>
-    </div>
-
   </div>
 
   <!-- =====================  BOTTOM: CONTROLS  ===================== -->
@@ -262,15 +238,15 @@
     <div class="pane">
       <h3>Game clock — controls</h3>
       <div class="row cols-2">
-        <button id="btn-start" class="start" data-shortcut="Space">▶ START <span class="legend">(Space)</span></button>
-        <button id="btn-stop"  class="stop"                          >■ PAUSE <span class="legend">(P)</span></button>
+        <button id="btn-start" class="start" data-action="start_game">▶ START <span class="key-hint"></span></button>
+        <button id="btn-stop"  class="stop"  data-action="stop_game" >■ PAUSE <span class="key-hint"></span></button>
       </div>
       <h3>Quick reset</h3>
       <div class="row cols-4">
-        <button class="preset" data-set-ms="1200000">20:00 <span class="legend">(1)</span></button>
-        <button class="preset" data-set-ms="900000" >15:00 <span class="legend">(2)</span></button>
-        <button class="preset" data-set-ms="600000" >10:00 <span class="legend">(3)</span></button>
-        <button class="preset" data-set-ms="120000" >2:00 <span class="legend">(4)</span></button>
+        <button class="preset" data-set-ms="1200000">20:00</button>
+        <button class="preset" data-set-ms="900000" >15:00</button>
+        <button class="preset" data-set-ms="600000" >10:00</button>
+        <button class="preset" data-set-ms="120000" >2:00</button>
       </div>
       <h3>Adjust</h3>
       <div class="adjust-grid">
@@ -287,12 +263,12 @@
     <div class="pane">
       <h3>Time-out clock</h3>
       <div class="row cols-2">
-        <button id="btn-to-start" class="start">▶ START <span class="legend">(T)</span></button>
-        <button id="btn-to-stop"  class="stop" >■ PAUSE <span class="legend">(Y)</span></button>
+        <button id="btn-to-start" class="start">▶ START</button>
+        <button id="btn-to-stop"  class="stop" >■ PAUSE</button>
       </div>
       <div class="row cols-2">
-        <button id="btn-to-reset" class="preset">Reset 1:00 <span class="legend">(R)</span></button>
-        <button id="btn-to-warn-20" class="ghost">20s warn: OFF <span class="legend">(W)</span></button>
+        <button id="btn-to-reset" class="preset">Reset 1:00</button>
+        <button id="btn-to-warn-20" class="ghost">20s warn: OFF</button>
       </div>
       <h3>Quick reset</h3>
       <div class="row cols-4">
@@ -312,20 +288,19 @@
 
     <!-- ===== Siren ===== -->
     <div class="pane">
-      <h3>Siren (hold)</h3>
-      <button id="btn-siren" class="siren">SIREN<br><span class="legend" style="font-size:11px">hold · key H</span></button>
+      <h3 style="display:flex;align-items:center;gap:8px;">
+        Siren (hold)
+        <span id="siren-pill" class="run-pill off" style="visibility:hidden">
+          <span class="led"></span><span class="lbl">SIREN</span>
+        </span>
+      </h3>
+      <button id="btn-siren" class="siren" data-action="siren">SIREN<br><span style="font-size:11px;color:#ffffff80">hold · <span class="key-hint"></span></span></button>
     </div>
 
   </div>
 </div>
 
 <div class="flash" id="flash-overlay"></div>
-
-<div class="status-strip">
-  <span id="ws-status">connecting…</span>
-  <span id="rtt-status"></span>
-  <span style="margin-left:auto">/timer — operator console</span>
-</div>
 
 <script src="/common.js"></script>
 <script>
@@ -352,8 +327,6 @@
   const btnToWarn20 = $("btn-to-warn-20");
   const btnSiren    = $("btn-siren");
   const flashEl     = $("flash-overlay");
-  const wsStatusEl  = $("ws-status");
-  const rttStatusEl = $("rtt-status");
 
   let lastState = null;
 
@@ -392,16 +365,13 @@
       else if (s.to_warn_20 && sec <= 20.5) toCardEl.classList.add("urgent20");
     }
 
-    // Siren indicator pill — visible only when on.
-    if (s && s.siren_active) {
-      sirenPillEl.style.display = "";
-      sirenPillEl.classList.remove("off");
-      sirenPillEl.classList.add("warn");
-    } else {
-      sirenPillEl.style.display = "none";
-      sirenPillEl.classList.remove("warn");
-      sirenPillEl.classList.add("off");
-    }
+    // Siren button + indicator pill — both driven by siren_active state,
+    // so keyboard and pointer triggers both produce the visual effect.
+    const sirenActive = !!(s && s.siren_active);
+    btnSiren.classList.toggle("pressed", sirenActive);
+    sirenPillEl.style.visibility = sirenActive ? "visible" : "hidden";
+    sirenPillEl.classList.toggle("warn", sirenActive);
+    sirenPillEl.classList.toggle("off",  !sirenActive);
 
     // Arm the start/stop indicator that matches the current state.
     btnStart.classList.toggle("armed", !!(s && !s.running));
@@ -425,22 +395,6 @@
     const lbl = el.querySelector(".lbl");
     if (lbl) lbl.textContent = on ? onText : offText;
   }
-
-  // ---------------------------------------------------------------------- //
-  // Status / connection display
-  // ---------------------------------------------------------------------- //
-  Scoreboard.onStatus(({ status }) => {
-    wsStatusEl.textContent = status === "open" ? "● live"
-                           : status === "connecting" ? "connecting…"
-                           : "● disconnected";
-    wsStatusEl.style.color = status === "open" ? "var(--green-2)"
-                            : status === "connecting" ? "var(--muted)"
-                            : "var(--red-2)";
-  });
-  setInterval(() => {
-    const rtt = Scoreboard.getBestRttMs();
-    rttStatusEl.textContent = isFinite(rtt) ? `RTT ${rtt.toFixed(0)}ms` : "";
-  }, 1000);
 
   // ---------------------------------------------------------------------- //
   // Buzzer events -> full-screen flash overlay (time-out warnings).
@@ -499,13 +453,11 @@
   function sirenStart() {
     if (sirenOn) return;
     sirenOn = true;
-    btnSiren.classList.add("pressed");
     Scoreboard.sendCommand("siren_on");
   }
   function sirenEnd() {
     if (!sirenOn) return;
     sirenOn = false;
-    btnSiren.classList.remove("pressed");
     Scoreboard.sendCommand("siren_off");
   }
   // Use pointer events (cover both mouse and touch). Capture release outside
@@ -529,56 +481,6 @@
     // Best-effort fire-and-forget; even if it doesn't make it, the
     // external integration should treat a dropped websocket as "off".
     if (sirenOn) Scoreboard.sendCommand("siren_off");
-  });
-
-  // ---------------------------------------------------------------------- //
-  // Keyboard shortcuts
-  //
-  //   Space        -> start         (game clock)
-  //   P            -> pause         (game clock)
-  //   1 2 3 4      -> 20:00 / 15:00 / 10:00 / 2:00
-  //   Arrow Up/Dn  -> ± 1 minute
-  //   Arrow R/L    -> ± 1 second
-  //   Shift+R/L    -> ± 0.1 second
-  //   H            -> siren (hold)
-  //   T / Y        -> time-out start / pause
-  //   R            -> time-out reset
-  //   W            -> toggle 20s warn
-  //
-  // ---------------------------------------------------------------------- //
-  document.addEventListener("keydown", (e) => {
-    if (e.target && e.target.tagName === "INPUT") return;
-    if (e.repeat && e.key.toLowerCase() !== "h") return;  // hold-H ok for siren
-    const k = e.key;
-
-    if (e.code === "Space")        { e.preventDefault(); Scoreboard.sendCommand("start"); }
-    else if (k === "p" || k === "P") { Scoreboard.sendCommand("stop"); }
-    else if (k === "1") Scoreboard.sendCommand("set_time", { value_ms: 1200000 });
-    else if (k === "2") Scoreboard.sendCommand("set_time", { value_ms:  900000 });
-    else if (k === "3") Scoreboard.sendCommand("set_time", { value_ms:  600000 });
-    else if (k === "4") Scoreboard.sendCommand("set_time", { value_ms:  120000 });
-    else if (k === "ArrowUp")   Scoreboard.sendCommand("adjust_game", { delta_ms:  60000 });
-    else if (k === "ArrowDown") Scoreboard.sendCommand("adjust_game", { delta_ms: -60000 });
-    else if (k === "ArrowRight") {
-      Scoreboard.sendCommand("adjust_game",
-        { delta_ms: e.shiftKey ? 100 : 1000 });
-    }
-    else if (k === "ArrowLeft") {
-      Scoreboard.sendCommand("adjust_game",
-        { delta_ms: e.shiftKey ? -100 : -1000 });
-    }
-    else if (k === "t" || k === "T") Scoreboard.sendCommand("to_start");
-    else if (k === "y" || k === "Y") Scoreboard.sendCommand("to_stop");
-    else if (k === "r" || k === "R") Scoreboard.sendCommand("to_reset");
-    else if (k === "w" || k === "W") Scoreboard.sendCommand("to_toggle_warn_20");
-    else if (k === "h" || k === "H") {
-      // Hold-H acts as a hold-siren via key autorepeat — once we see the
-      // first keydown we send on, and we send off in keyup.
-      if (!sirenOn) sirenStart();
-    }
-  });
-  document.addEventListener("keyup", (e) => {
-    if (e.key === "h" || e.key === "H") sirenEnd();
   });
 
   // ---------------------------------------------------------------------- //

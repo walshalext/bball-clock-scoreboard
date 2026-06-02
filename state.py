@@ -61,7 +61,6 @@ class Player:
     fouls: int = 0
     points: int = 0
     disqualified: bool = False   # GD marker (FIBA §7)
-    on_court: bool = False
     played: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -71,7 +70,6 @@ class Player:
             "fouls": self.fouls,
             "points": self.points,
             "disqualified": self.disqualified,
-            "on_court": self.on_court,
             "played": self.played,
         }
 
@@ -282,6 +280,46 @@ class GameState:
         self.sc_anchor_value_ms = float(SHOT_CLOCK_FULL_MS)
         self.to_anchor_server_ms = now
         self.to_anchor_value_ms = float(DEFAULT_TIMEOUT_MS)
+
+    def reset_to_defaults(self) -> None:
+        """Return the whole game to a blank-slate default setup.
+
+        This is intentionally broader than the period/halftime reset helpers:
+        it stops every clock, clears scores/fouls/time-outs/possession, restores
+        default teams/rosters/periods/settings, and bumps the state once.
+        """
+        with self._lock:
+            now = server_now_ms()
+
+            self.periods = _default_periods()
+            self.period_index = 0
+
+            self.running = False
+            self.anchor_server_ms = now
+            self.anchor_value_ms = float(DEFAULT_CLOCK_MS)
+
+            self.sc_enabled = False
+            self.sc_independent = False
+            self.sc_anchor_server_ms = now
+            self.sc_anchor_value_ms = float(SHOT_CLOCK_FULL_MS)
+            self.sc_visible = True
+
+            self.to_running = False
+            self.to_anchor_server_ms = now
+            self.to_anchor_value_ms = float(DEFAULT_TIMEOUT_MS)
+            self.to_warn_20 = False
+
+            self.siren_active = False
+            self.possession = "off"
+            self.timeout_mode = "remaining"
+            self.timeout_max = 3
+
+            self.home = Team(name="HOME", short="HOM",
+                             players=_default_roster("H"))
+            self.away = Team(name="AWAY", short="AWY",
+                             players=_default_roster("A"))
+
+            self._bump()
 
     # ----------------- helpers --------------------------------------------- #
 
@@ -638,11 +676,6 @@ class GameState:
         with self._lock:
             t = self._team(team)
             t.team_fouls = max(0, t.team_fouls + 1)
-            # Pragmatic auto-bonus on the 5th team foul. The operator can also
-            # toggle bonus manually after the 4th foul once the ball goes live
-            # (strict FIBA §3 / §8 trigger) via set_bonus.
-            if t.team_fouls >= 5:
-                t.bonus = True
             self._bump()
 
     def set_team_foul(self, team: str, value: int) -> None:
@@ -937,6 +970,18 @@ class GameState:
                 "home": self.home.to_dict(),
                 "away": self.away.to_dict(),
             }
+
+    # ----------------- config defaults ----------------------------------- #
+
+    def apply_config_defaults(self, cfg: dict[str, Any]) -> None:
+        """Seed game state from operator config. Called at startup and after a
+        full reset so the period list and display settings survive restarts."""
+        if cfg.get("periods"):
+            self.set_periods(cfg["periods"])
+        self.set_timeout_settings(
+            mode=cfg.get("timeout_mode"),
+            max_count=cfg.get("timeout_max"),
+        )
 
     # ----------------- buzzer scheduling support ------------------------- #
 

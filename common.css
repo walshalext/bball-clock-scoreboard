@@ -1,0 +1,118 @@
+/* common.css — shared baseline for every scoreboard page.
+ *
+ * Loaded via <link> in every page's <head>.  Provides:
+ *   1. CSS custom properties:
+ *      - --sb-height (status-bar height used by all pages)
+ *      - Full operator-console palette (control, visuals, timer, shotclock-op).
+ *        Display pages override the tokens they need in their own <style>.
+ *   2. Universal box-sizing reset.
+ *   3. Status bar + navigation overlay styles (injected into the DOM by
+ *      common.js but now styled here rather than via an inline <style> tag).
+ */
+
+/* ---- Shared tokens ---------------------------------------------------- */
+:root {
+  --sb-height: 34px;
+
+  /* Operator-console palette.
+     Display pages (clock, shot, scoreboard, …) override --bg and colour
+     tokens in their own <style> block, which comes after this file. */
+  --bg:         #0e1116;
+  --panel:      #161b22;
+  --panel-2:    #1f262f;
+  --panel-3:    #28303a;
+  --border:     #2a313c;
+  --text:       #e6edf3;
+  --muted:      #8b949e;
+  --accent:     #ff8c1a;
+  --accent-dim: #b96712;
+  --green:      #2ea043;
+  --green-2:    #46c563;
+  --red:        #da3633;
+  --red-2:      #ff5247;
+  --yellow:     #d4a017;
+  --blue:       #2f81f7;
+  --cyan:       #22d3ee;
+}
+
+/* ---- Universal reset --------------------------------------------------- */
+* { box-sizing: border-box; }
+
+/* ---- Status bar -------------------------------------------------------- */
+#csb {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  height: var(--sb-height);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 12px; gap: 10px;
+  background: rgba(8,8,8,.96);
+  border-top: 1px solid rgba(255,255,255,.07);
+  z-index: 500;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; color: #555;
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+#csb-left, #csb-right { display: flex; align-items: center; gap: 8px; }
+#csb-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #333; flex-shrink: 0;
+}
+#csb-dot.ok  { background: #2ea043; }
+#csb-dot.bad { background: #ff3030; }
+#csb-nav {
+  background: transparent; border: 1px solid #2a2a2a; border-radius: 5px;
+  color: #555; padding: 2px 10px;
+  font-family: inherit; font-size: 17px; line-height: 1.2;
+  cursor: pointer; touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: color .1s, border-color .1s;
+}
+#csb-nav:hover, #csb-nav:active { color: #ccc; border-color: #555; }
+
+/* ---- Navigation overlay ----------------------------------------------- */
+#cnav {
+  position: fixed; inset: 0; z-index: 600;
+  display: none; align-items: flex-end; justify-content: center;
+  background: rgba(0,0,0,.72);
+  padding-bottom: var(--sb-height);
+}
+#cnav.open { display: flex; }
+#cnav-panel {
+  width: min(560px, 100%); max-height: 76vh; overflow-y: auto;
+  background: #0b0b0b;
+  border: 1px solid #1f1f1f; border-bottom: none;
+  border-radius: 14px 14px 0 0;
+  padding: 16px 12px 8px;
+}
+#cnav-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+#cnav-title {
+  font-size: 11px; color: #444;
+  text-transform: uppercase; letter-spacing: .22em;
+}
+#cnav-close {
+  background: transparent; border: 1px solid #2a2a2a; border-radius: 50%;
+  color: #555; width: 26px; height: 26px; font-size: 13px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  transition: color .1s, border-color .1s;
+}
+#cnav-close:hover { color: #fff; border-color: #555; }
+#cnav-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 6px; padding-bottom: 10px;
+}
+.cnav-item {
+  display: flex; flex-direction: column; justify-content: center;
+  background: #111; border: 1px solid #1e1e1e; border-radius: 8px;
+  padding: 10px 12px; min-height: 54px;
+  text-decoration: none; color: #fff;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  transition: background .1s, border-color .1s;
+}
+.cnav-item:hover, .cnav-item:active { background: #1a1a1a; }
+.cnav-item.cnav-cur { border-color: #ff8c1a; }
+.cnav-item.cnav-cur .cnav-name { color: #ff8c1a; }
+.cnav-name { font-size: 14px; font-weight: 700; line-height: 1.2; }
+.cnav-desc { font-size: 10px; color: #444; margin-top: 3px; }

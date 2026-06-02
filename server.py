@@ -9,6 +9,7 @@ Routes
 - GET /possession    -> possession.html     (alternating possession arrow)
 - GET /fouls?team=…  -> fouls.html          (team foul indicator card)
 - GET /common.js     -> shared client JS
+- GET /common.css    -> shared client CSS
 - GET /api/state     -> JSON snapshot (debugging)
 - WS  /ws            -> JSON command + state + buzzer channel
 
@@ -29,12 +30,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 
+import config as cfg_module
+import roster_import
 from state import GameState, server_now_ms
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -42,8 +46,17 @@ log = logging.getLogger("scoreboard")
 
 BASE_DIR = Path(__file__).resolve().parent
 
-app = FastAPI(title="bball-clock-scoreboard")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    buzzer.reschedule()
+    yield
+
+
+app = FastAPI(title="bball-clock-scoreboard", lifespan=lifespan)
 game = GameState()
+_cfg = cfg_module.load()
+game.apply_config_defaults(_cfg)
 
 
 # --------------------------------------------------------------------------- #
@@ -85,24 +98,15 @@ async def broadcast_state() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Buzzer watcher
+# Buzzer scheduler
 # --------------------------------------------------------------------------- #
 #
-# When either clock is running, we schedule an asyncio task that wakes up at
-# the expected zero crossing. On wake-up, we recompute -- if the relevant
-# clock has been changed since (different version, no longer running, or value
-# no longer ~0), we just exit. Otherwise we fire the buzzer broadcast.
+# When a clock is running, we schedule an asyncio task that wakes at the
+# expected zero crossing. On wake-up we recompute — if state changed since
+# (different version, no longer running, or value no longer ~0) we exit.
+# Otherwise we fire the buzzer broadcast.
 #
-# Every command that touches a clock calls reschedule_buzzers() afterwards.
-
-_game_buzz_task: Optional[asyncio.Task[None]] = None
-_shot_buzz_task: Optional[asyncio.Task[None]] = None
-# Three separate tasks for the time-out clock — one per warning event so
-# they can be cancelled independently when the clock state changes.
-_to_buzz_20_task: Optional[asyncio.Task[None]] = None
-_to_buzz_10_task: Optional[asyncio.Task[None]] = None
-_to_buzz_0_task:  Optional[asyncio.Task[None]] = None
-
+# Every command that touches a clock calls buzzer.reschedule() afterwards.
 
 async def _wait_and_fire(kind: str, fire_at_ms: float, captured_version: int) -> None:
     """Sleep until fire_at_ms (server time), then fire if state hasn't moved."""
@@ -113,11 +117,8 @@ async def _wait_and_fire(kind: str, fire_at_ms: float, captured_version: int) ->
 
         snap = game.snapshot()
         if snap["version"] != captured_version:
-            # Some command changed state; the new command should have
-            # rescheduled (or skipped) us already.
             return
 
-        # Sanity check: the relevant clock should actually be at zero.
         if kind == "period":
             if not snap["running"]:
                 return
@@ -125,7 +126,6 @@ async def _wait_and_fire(kind: str, fire_at_ms: float, captured_version: int) ->
                             - (snap["server_now_ms"] - snap["anchor_server_ms"]))
             if remaining > 50:
                 return
-            # FIBA §4.1: the game clock stops the game; reflect that in state.
             game.stop()
             await broadcast_state()
         elif kind == "shot_clock":
@@ -135,19 +135,11 @@ async def _wait_and_fire(kind: str, fire_at_ms: float, captured_version: int) ->
                             - (snap["server_now_ms"] - snap["sc_anchor_server_ms"]))
             if remaining > 50:
                 return
-            # FIBA §5.5: shot-clock buzzer does NOT stop the game clock.
-            # In the new model we ALSO don't touch the operator's sc_enabled
-            # switch -- we just zero the value. The next-zero-at guard
-            # against value <= 0 prevents the buzzer from re-firing until
-            # the operator resets the value (mirrors a physical clock).
             game.sc_set_ms(0)
             await broadcast_state()
-
         elif kind in ("timeout_warn_20", "timeout_warn_10"):
-            # Pure visual events -- just broadcast, don't touch state.
             if not snap["to_running"]:
                 return
-
         elif kind == "timeout_end":
             if not snap["to_running"]:
                 return
@@ -155,8 +147,6 @@ async def _wait_and_fire(kind: str, fire_at_ms: float, captured_version: int) ->
                             - (snap["server_now_ms"] - snap["to_anchor_server_ms"]))
             if remaining > 50:
                 return
-            # Stop the time-out clock and zero its displayed value. The
-            # operator hits Reset (or Set) to use it again.
             game.to_stop()
             game.to_set_ms(0)
             await broadcast_state()
@@ -167,68 +157,164 @@ async def _wait_and_fire(kind: str, fire_at_ms: float, captured_version: int) ->
             "server_now_ms": server_now_ms(),
         })
     except asyncio.CancelledError:
-        # Reschedule path; just exit quietly.
         raise
 
 
-def _cancel(task: Optional[asyncio.Task[None]]) -> None:
-    if task is not None and not task.done():
-        task.cancel()
+class BuzzerScheduler:
+    _KINDS = ("period", "shot_clock", "timeout_warn_20", "timeout_warn_10", "timeout_end")
 
+    def __init__(self) -> None:
+        self._tasks: dict[str, Optional[asyncio.Task[None]]] = {k: None for k in self._KINDS}
 
-def reschedule_buzzers() -> None:
-    """Cancel and (re)schedule every buzzer task based on current state."""
-    global _game_buzz_task, _shot_buzz_task
-    global _to_buzz_20_task, _to_buzz_10_task, _to_buzz_0_task
-    snap = game.snapshot()
+    def _cancel(self, kind: str) -> None:
+        task = self._tasks.get(kind)
+        if task and not task.done():
+            task.cancel()
+        self._tasks[kind] = None
 
-    _cancel(_game_buzz_task)
-    _game_buzz_task = None
-    g_zero = game.next_game_clock_zero_at_ms()
-    if g_zero is not None:
-        _game_buzz_task = asyncio.create_task(
-            _wait_and_fire("period", g_zero, snap["version"])
-        )
-
-    _cancel(_shot_buzz_task)
-    _shot_buzz_task = None
-    s_zero = game.next_shot_clock_zero_at_ms()
-    if s_zero is not None:
-        _shot_buzz_task = asyncio.create_task(
-            _wait_and_fire("shot_clock", s_zero, snap["version"])
-        )
-
-    # Time-out clock: up to three events per run (20s, 10s, end). The 20s
-    # warning only fires when the operator has it enabled.
-    _cancel(_to_buzz_20_task); _to_buzz_20_task = None
-    if snap.get("to_warn_20"):
-        t20 = game.next_to_clock_event_at_ms(20)
-        if t20 is not None:
-            _to_buzz_20_task = asyncio.create_task(
-                _wait_and_fire("timeout_warn_20", t20, snap["version"])
+    def _schedule(self, kind: str, fire_at_ms: Optional[float], version: int) -> None:
+        self._cancel(kind)
+        if fire_at_ms is not None:
+            self._tasks[kind] = asyncio.create_task(
+                _wait_and_fire(kind, fire_at_ms, version)
             )
-    _cancel(_to_buzz_10_task); _to_buzz_10_task = None
-    t10 = game.next_to_clock_event_at_ms(10)
-    if t10 is not None:
-        _to_buzz_10_task = asyncio.create_task(
-            _wait_and_fire("timeout_warn_10", t10, snap["version"])
-        )
-    _cancel(_to_buzz_0_task); _to_buzz_0_task = None
-    t0 = game.next_to_clock_event_at_ms(0)
-    if t0 is not None:
-        _to_buzz_0_task = asyncio.create_task(
-            _wait_and_fire("timeout_end", t0, snap["version"])
-        )
+
+    def reschedule(self) -> None:
+        """Cancel and (re)schedule every buzzer task based on current state."""
+        snap = game.snapshot()
+        v = snap["version"]
+
+        self._schedule("period",     game.next_game_clock_zero_at_ms(), v)
+        self._schedule("shot_clock", game.next_shot_clock_zero_at_ms(), v)
+
+        t20 = game.next_to_clock_event_at_ms(20) if snap.get("to_warn_20") else None
+        self._schedule("timeout_warn_20", t20, v)
+        self._schedule("timeout_warn_10", game.next_to_clock_event_at_ms(10), v)
+        self._schedule("timeout_end",     game.next_to_clock_event_at_ms(0),  v)
+
+
+buzzer = BuzzerScheduler()
 
 
 # --------------------------------------------------------------------------- #
 # Command dispatch
 # --------------------------------------------------------------------------- #
 
-# Ops that change clock state (running flags or anchor) and therefore need
-# the buzzer scheduler re-run. Any flip of game.running, sc_enabled, or
-# sc_independent may change the effective running state.
+def _cmd_reset_game(msg: dict) -> None:
+    game.reset_to_defaults()
+    game.apply_config_defaults(_cfg)
+
+def _cmd_set_time(msg: dict) -> None:
+    if "value_ms" in msg:
+        game.set_game_ms(float(msg["value_ms"]))
+    else:
+        minutes = float(msg.get("minutes", 0))
+        seconds = float(msg.get("seconds", 0))
+        game.set_game_ms((minutes * 60 + seconds) * 1000)
+
+def _cmd_sc_set(msg: dict) -> None:
+    if "value_ms" in msg:
+        game.sc_set_ms(float(msg["value_ms"]))
+    elif "seconds" in msg:
+        game.sc_set_ms(float(msg["seconds"]) * 1000)
+
+def _cmd_to_set(msg: dict) -> None:
+    if "value_ms" in msg:
+        game.to_set_ms(float(msg["value_ms"]))
+    elif "seconds" in msg:
+        game.to_set_ms(float(msg["seconds"]) * 1000)
+
+def _cmd_add_score(msg: dict) -> None:
+    pi = msg.get("player_index")
+    game.add_score(msg.get("team", "home"), int(msg.get("points", 1)),
+                   player_index=int(pi) if pi is not None else None)
+
+def _cmd_set_timeout_settings(msg: dict) -> None:
+    game.set_timeout_settings(
+        mode=msg.get("mode"),
+        max_count=int(msg["max_count"]) if "max_count" in msg else None,
+    )
+
+def _cmd_set_possession(msg: dict) -> None:
+    game.set_possession(msg.get("direction", msg.get("who", "off")))
+
+
+_CMD: dict[str, Callable[[dict], None]] = {
+    # game reset
+    "reset_game":           _cmd_reset_game,
+    # game clock
+    "start":                lambda m: game.start(),
+    "stop":                 lambda m: game.stop(),
+    "toggle":               lambda m: game.toggle(),
+    "set_time":             _cmd_set_time,
+    "adjust_game":          lambda m: game.adjust_game_ms(float(m.get("delta_ms", 0))),
+    "set_period":           lambda m: game.set_period_index(int(m.get("period_index", m.get("period", 0)))),
+    "adjust_period":        lambda m: game.adjust_period(int(m.get("delta", 0))),
+    "set_periods":          lambda m: game.set_periods(list(m.get("entries") or [])),
+    "reset_periods":        lambda m: game.reset_periods(),
+    # shot clock
+    "sc_enable":            lambda m: game.sc_set_enabled(True),
+    "sc_start":             lambda m: game.sc_set_enabled(True),    # legacy alias
+    "sc_disable":           lambda m: game.sc_set_enabled(False),
+    "sc_stop":              lambda m: game.sc_set_enabled(False),   # legacy alias
+    "sc_toggle":            lambda m: game.sc_toggle_enabled(),
+    "sc_independent_on":    lambda m: game.sc_set_independent(True),
+    "sc_independent_off":   lambda m: game.sc_set_independent(False),
+    "sc_toggle_independent":lambda m: game.sc_toggle_independent(),
+    "sc_set":               _cmd_sc_set,
+    "sc_adjust":            lambda m: game.adjust_shot_ms(float(m.get("delta_ms", 0))),
+    "sc_reset_24":          lambda m: game.sc_reset_full(),
+    "sc_reset_14":          lambda m: game.sc_reset_short(),
+    "sc_show":              lambda m: game.sc_set_visible(True),
+    "sc_hide":              lambda m: game.sc_set_visible(False),
+    "sc_toggle_visible":    lambda m: game.sc_toggle_visible(),
+    # time-out clock
+    "to_start":             lambda m: game.to_start(),
+    "to_stop":              lambda m: game.to_stop(),
+    "to_toggle":            lambda m: game.to_toggle(),
+    "to_set":               _cmd_to_set,
+    "to_adjust":            lambda m: game.to_adjust_ms(float(m.get("delta_ms", 0))),
+    "to_reset":             lambda m: game.to_reset(),
+    "to_warn_20_on":        lambda m: game.to_set_warn_20(True),
+    "to_warn_20_off":       lambda m: game.to_set_warn_20(False),
+    "to_toggle_warn_20":    lambda m: game.to_toggle_warn_20(),
+    # siren
+    "siren_on":             lambda m: game.siren_set(True),
+    "siren_off":            lambda m: game.siren_set(False),
+    "siren_toggle":         lambda m: game.siren_toggle(),
+    # scores
+    "add_score":            _cmd_add_score,
+    "set_score":            lambda m: game.set_score(m.get("team", "home"), int(m.get("score", 0))),
+    "add_player_points":    lambda m: game.add_player_points(m["team"], int(m["player_index"]), int(m.get("points", 1))),
+    # fouls
+    "add_team_foul":        lambda m: game.add_team_foul(m.get("team", "home")),
+    "set_team_foul":        lambda m: game.set_team_foul(m.get("team", "home"), int(m.get("value", 0))),
+    "set_bonus":            lambda m: game.set_bonus(m.get("team", "home"), bool(m.get("on", True))),
+    "reset_team_fouls":     lambda m: game.reset_team_fouls(),
+    "reset_timeouts":       lambda m: game.reset_timeouts(),
+    "add_player_foul":      lambda m: game.add_player_foul(m["team"], int(m["player_index"])),
+    "subtract_player_foul": lambda m: game.subtract_player_foul(m["team"], int(m["player_index"])),
+    "set_player_foul":      lambda m: game.set_player_foul(m["team"], int(m["player_index"]), int(m.get("value", 0))),
+    "set_player_dq":        lambda m: game.set_player_disqualified(m["team"], int(m["player_index"]), bool(m.get("on", True))),
+    "set_player_played":    lambda m: game.set_player_played(m["team"], int(m["player_index"]), bool(m.get("on", True))),
+    "add_player":           lambda m: game.add_player(m.get("team", "home"), number=m.get("number", ""), name=m.get("name", "")),
+    "remove_player":        lambda m: game.remove_player(m.get("team", "home"), int(m.get("player_index", -1))),
+    "sort_roster":          lambda m: game.sort_roster(m.get("team", "home")),
+    # time-outs
+    "add_timeout":          lambda m: game.add_timeout(m.get("team", "home")),
+    "set_timeouts":         lambda m: game.set_timeouts(m.get("team", "home"), int(m.get("taken", 0))),
+    "set_timeout_settings": _cmd_set_timeout_settings,
+    # possession
+    "set_possession":       _cmd_set_possession,
+    "toggle_possession":    lambda m: game.toggle_possession(),
+    # roster editing
+    "set_player":           lambda m: game.set_player(m["team"], int(m["player_index"]), number=m.get("number"), name=m.get("name")),
+    "set_team_meta":        lambda m: game.set_team_meta(m["team"], name=m.get("name"), short=m.get("short")),
+}
+
+# Ops that touch a clock anchor or running flag — buzzer must be rescheduled.
 _CLOCK_OPS = {
+    "reset_game",
     "start", "stop", "toggle", "set_time", "adjust_game",
     "sc_enable", "sc_disable", "sc_toggle",
     "sc_independent_on", "sc_independent_off", "sc_toggle_independent",
@@ -243,286 +329,53 @@ _CLOCK_OPS = {
 
 
 async def handle_command(op: str, msg: dict[str, Any]) -> None:
-    """Apply a control command, reschedule buzzers, broadcast state."""
-
-    # ----- game clock -------------------------------------------------------
-    if op == "start":
-        game.start()
-    elif op == "stop":
-        game.stop()
-    elif op == "toggle":
-        game.toggle()
-    elif op == "set_time":
-        if "value_ms" in msg:
-            value_ms = float(msg["value_ms"])
-        else:
-            minutes = float(msg.get("minutes", 0))
-            seconds = float(msg.get("seconds", 0))
-            value_ms = (minutes * 60 + seconds) * 1000
-        game.set_game_ms(value_ms)
-    elif op == "adjust_game":
-        # Signed delta in ms. Used by the timer operator view's +/- buttons.
-        game.adjust_game_ms(float(msg.get("delta_ms", 0)))
-    elif op == "set_period":
-        # 0-based index into the period list. Legacy aliases (`period_index`
-        # or `period`) accepted; whichever is provided wins.
-        idx = msg.get("period_index", msg.get("period", 0))
-        game.set_period_index(int(idx))
-    elif op == "adjust_period":
-        game.adjust_period(int(msg.get("delta", 0)))
-    elif op == "set_periods":
-        game.set_periods(list(msg.get("entries") or []))
-    elif op == "reset_periods":
-        game.reset_periods()
-
-    # ----- shot clock -------------------------------------------------------
-    # Operator switch (sc_enabled). Legacy aliases sc_start/sc_stop are kept
-    # for any older client tab that hasn't reloaded yet.
-    elif op in ("sc_enable", "sc_start"):
-        game.sc_set_enabled(True)
-    elif op in ("sc_disable", "sc_stop"):
-        game.sc_set_enabled(False)
-    elif op == "sc_toggle":
-        game.sc_toggle_enabled()
-    # Independent / force-run mode.
-    elif op == "sc_independent_on":
-        game.sc_set_independent(True)
-    elif op == "sc_independent_off":
-        game.sc_set_independent(False)
-    elif op == "sc_toggle_independent":
-        game.sc_toggle_independent()
-    # Value-only adjustments (don't touch the switch).
-    elif op == "sc_set":
-        if "value_ms" in msg:
-            game.sc_set_ms(float(msg["value_ms"]))
-        elif "seconds" in msg:
-            game.sc_set_ms(float(msg["seconds"]) * 1000)
-    elif op == "sc_adjust":
-        # Signed delta in ms for the shot-clock operator view's +/- buttons.
-        game.adjust_shot_ms(float(msg.get("delta_ms", 0)))
-    elif op == "sc_reset_24":
-        game.sc_reset_full()
-    elif op == "sc_reset_14":
-        game.sc_reset_short()
-    elif op == "sc_show":
-        game.sc_set_visible(True)
-    elif op == "sc_hide":
-        game.sc_set_visible(False)
-    elif op == "sc_toggle_visible":
-        game.sc_toggle_visible()
-
-    # ----- time-out (stopwatch) clock --------------------------------------
-    elif op == "to_start":
-        game.to_start()
-    elif op == "to_stop":
-        game.to_stop()
-    elif op == "to_toggle":
-        game.to_toggle()
-    elif op == "to_set":
-        if "value_ms" in msg:
-            game.to_set_ms(float(msg["value_ms"]))
-        elif "seconds" in msg:
-            game.to_set_ms(float(msg["seconds"]) * 1000)
-    elif op == "to_adjust":
-        # Signed delta in ms for the timer operator view's +/- on time-out.
-        game.to_adjust_ms(float(msg.get("delta_ms", 0)))
-    elif op == "to_reset":
-        game.to_reset()
-    elif op == "to_warn_20_on":
-        game.to_set_warn_20(True)
-    elif op == "to_warn_20_off":
-        game.to_set_warn_20(False)
-    elif op == "to_toggle_warn_20":
-        game.to_toggle_warn_20()
-
-    # ----- siren ------------------------------------------------------------
-    # Held True while the operator is pressing the siren button on the timer
-    # operator view; published in the snapshot so an external siren-relay
-    # integration can subscribe and drive a physical horn.
-    elif op == "siren_on":
-        game.siren_set(True)
-    elif op == "siren_off":
-        game.siren_set(False)
-    elif op == "siren_toggle":
-        game.siren_toggle()
-
-    # ----- scores -----------------------------------------------------------
-    elif op == "add_score":
-        team = msg.get("team", "home")
-        points = int(msg.get("points", 1))
-        pi = msg.get("player_index")
-        game.add_score(team, points, player_index=int(pi) if pi is not None else None)
-    elif op == "set_score":
-        game.set_score(msg.get("team", "home"), int(msg.get("score", 0)))
-    elif op == "add_player_points":
-        game.add_player_points(msg["team"], int(msg["player_index"]), int(msg.get("points", 1)))
-
-    # ----- fouls ------------------------------------------------------------
-    elif op == "add_team_foul":
-        game.add_team_foul(msg.get("team", "home"))
-    elif op == "set_team_foul":
-        game.set_team_foul(msg.get("team", "home"), int(msg.get("value", 0)))
-    elif op == "set_bonus":
-        game.set_bonus(msg.get("team", "home"), bool(msg.get("on", True)))
-    elif op == "reset_team_fouls":
-        game.reset_team_fouls()
-    elif op == "reset_timeouts":
-        game.reset_timeouts()
-    elif op == "add_player_foul":
-        game.add_player_foul(msg["team"], int(msg["player_index"]))
-    elif op == "subtract_player_foul":
-        game.subtract_player_foul(msg["team"], int(msg["player_index"]))
-    elif op == "set_player_foul":
-        game.set_player_foul(msg["team"], int(msg["player_index"]), int(msg.get("value", 0)))
-    elif op == "set_player_dq":
-        game.set_player_disqualified(msg["team"], int(msg["player_index"]), bool(msg.get("on", True)))
-    elif op == "set_player_played":
-        game.set_player_played(msg["team"], int(msg["player_index"]), bool(msg.get("on", True)))
-    elif op == "add_player":
-        game.add_player(
-            msg.get("team", "home"),
-            number=msg.get("number", ""),
-            name=msg.get("name", ""),
-        )
-    elif op == "remove_player":
-        game.remove_player(msg.get("team", "home"), int(msg.get("player_index", -1)))
-    elif op == "sort_roster":
-        # Reorders the named team's players by jersey number (FIBA order).
-        game.sort_roster(msg.get("team", "home"))
-
-    # ----- time-outs --------------------------------------------------------
-    elif op == "add_timeout":
-        game.add_timeout(msg.get("team", "home"))
-    elif op == "set_timeouts":
-        game.set_timeouts(msg.get("team", "home"), int(msg.get("taken", 0)))
-    elif op == "set_timeout_settings":
-        game.set_timeout_settings(
-            mode=msg.get("mode"),
-            max_count=int(msg["max_count"]) if "max_count" in msg else None,
-        )
-
-    # ----- possession -------------------------------------------------------
-    elif op == "set_possession":
-        # Accept either "direction" or legacy "who"; normalize.
-        d = msg.get("direction", msg.get("who", "off"))
-        game.set_possession(d)
-    elif op == "toggle_possession":
-        game.toggle_possession()
-
-    # ----- roster -----------------------------------------------------------
-    elif op == "set_player":
-        game.set_player(
-            msg["team"], int(msg["player_index"]),
-            number=msg.get("number"),
-            name=msg.get("name"),
-        )
-    elif op == "set_team_meta":
-        game.set_team_meta(msg["team"], name=msg.get("name"), short=msg.get("short"))
-
-    else:
+    handler = _CMD.get(op)
+    if handler is None:
         log.warning("unknown op: %s", op)
         return
-
+    handler(msg)
     if op in _CLOCK_OPS:
-        reschedule_buzzers()
-
+        buzzer.reschedule()
     await broadcast_state()
 
 
 # --------------------------------------------------------------------------- #
-# HTTP routes
+# HTTP routes — static pages
 # --------------------------------------------------------------------------- #
 
-# The HTML/JS we serve changes constantly during development. Tell the
-# browser not to cache it so a refresh always picks up the latest version.
 _NO_CACHE = {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
     "Pragma": "no-cache",
     "Expires": "0",
 }
 
-
-@app.get("/")
-async def control_page() -> FileResponse:
-    return FileResponse(BASE_DIR / "control.html", headers=_NO_CACHE)
-
-
-@app.get("/scoreboard")
-async def scoreboard_page() -> FileResponse:
-    return FileResponse(BASE_DIR / "scoreboard.html", headers=_NO_CACHE)
-
-
-@app.get("/clock")
-async def clock_page() -> FileResponse:
-    return FileResponse(BASE_DIR / "clock.html", headers=_NO_CACHE)
-
-
-@app.get("/shot")
-async def shot_page() -> FileResponse:
-    return FileResponse(BASE_DIR / "shot.html", headers=_NO_CACHE)
+_PAGES: dict[str, str] = {
+    "/":             "control.html",
+    "/scoreboard":   "scoreboard.html",
+    "/clock":        "clock.html",
+    "/shot":         "shot.html",
+    "/timer":        "timer.html",
+    "/shotclock-op": "shotclock-op.html",
+    "/possession":   "possession.html",
+    "/arrow":        "arrow.html",
+    "/master":       "master.html",
+    "/visuals":      "visuals.html",
+    "/fouls":        "fouls.html",
+    "/players":      "players.html",
+    "/timeout":      "timeout.html",
+    "/shortcuts":    "shortcuts.html",
+}
 
 
-@app.get("/timer")
-async def timer_op_page() -> FileResponse:
-    """Dedicated game-clock operator console (touch-friendly).
-
-    Big game/shot/time-out readouts on top, large run indicators and a
-    siren button. Buttons live in the bottom half for thumb-reach. Sends
-    'start', 'stop', 'adjust_game', 'set_time', 'siren_on'/'siren_off',
-    and all time-out clock ops. Read-only for shot-clock state."""
-    return FileResponse(BASE_DIR / "timer.html", headers=_NO_CACHE)
+def _make_page_handler(filename: str):
+    async def handler() -> FileResponse:
+        return FileResponse(BASE_DIR / filename, headers=_NO_CACHE)
+    handler.__name__ = filename.replace(".html", "_page").replace("-", "_")
+    return handler
 
 
-@app.get("/shotclock-op")
-async def shotclock_op_page() -> FileResponse:
-    """Dedicated shot-clock operator console (touch-friendly).
-
-    Big shot-clock + game-clock readouts on top, large run indicators.
-    Separate start/pause for the shot clock, 24/14 resets, +/- adjust,
-    independent and hide toggles. Read-only for game-clock state."""
-    return FileResponse(BASE_DIR / "shotclock-op.html", headers=_NO_CACHE)
-
-
-@app.get("/possession")
-async def possession_page() -> FileResponse:
-    return FileResponse(BASE_DIR / "possession.html", headers=_NO_CACHE)
-
-
-@app.get("/arrow")
-async def arrow_op_page() -> FileResponse:
-    """Possession-arrow operator console (touch-friendly).
-
-    Big arrow indicator on top, large LEFT / OFF / RIGHT buttons and a
-    swap button below. Sends set_possession / toggle_possession. The
-    operator sees the raw server direction (no per-device invert)."""
-    return FileResponse(BASE_DIR / "arrow.html", headers=_NO_CACHE)
-
-
-@app.get("/visuals")
-async def visuals_op_page() -> FileResponse:
-    """Scorer's table console: period, scores, team fouls + bonus,
-    time-outs, and per-player points/fouls. NO clock controls (those
-    live on /timer and /shotclock-op)."""
-    return FileResponse(BASE_DIR / "visuals.html", headers=_NO_CACHE)
-
-
-@app.get("/fouls")
-async def fouls_page(request: Request) -> FileResponse:
-    # The page itself reads ?team= from window.location; we just serve the file.
-    return FileResponse(BASE_DIR / "fouls.html", headers=_NO_CACHE)
-
-
-@app.get("/players")
-async def players_page(request: Request) -> FileResponse:
-    # Standalone single-team roster view. Reads ?team= and the display
-    # toggles from window.location.
-    return FileResponse(BASE_DIR / "players.html", headers=_NO_CACHE)
-
-
-@app.get("/timeout")
-async def timeout_page() -> FileResponse:
-    # Dedicated full-screen time-out countdown view.
-    return FileResponse(BASE_DIR / "timeout.html", headers=_NO_CACHE)
+for _path, _fname in _PAGES.items():
+    app.get(_path)(_make_page_handler(_fname))
 
 
 @app.get("/common.js")
@@ -532,100 +385,62 @@ async def common_js() -> FileResponse:
                         headers=_NO_CACHE)
 
 
+@app.get("/common.css")
+async def common_css() -> FileResponse:
+    return FileResponse(BASE_DIR / "common.css",
+                        media_type="text/css",
+                        headers=_NO_CACHE)
+
+
 @app.get("/api/state")
 async def api_state() -> JSONResponse:
     return JSONResponse(game.snapshot())
 
 
 # --------------------------------------------------------------------------- #
-# Roster import (Sportradar / BasketballVictoria fixture detail)
+# Keyboard shortcuts config
 # --------------------------------------------------------------------------- #
 
-# Each league sits behind a different Sportradar embed-API tenant: BV uses
-# embed/2 with a sub=statistics query param; NBL1 uses embed/3 without it.
-# The CDN also gates on Referer/Origin matching the public site.
-LEAGUE_CONFIGS: dict[str, dict[str, str]] = {
-    "bv": {
-        "url": ("https://embed-api.eui.connect.sportradar.com/v1/embed/2/"
-                "fixture_detail?sub=statistics&fixtureId={fid}"),
-        "referer": "https://www.basketballvictoria.com.au/",
-        "origin":  "https://www.basketballvictoria.com.au",
-    },
-    "nbl1": {
-        "url": ("https://embed-api.eui.connect.sportradar.com/v1/embed/3/"
-                "fixture_detail?fixtureId={fid}"),
-        "referer": "https://www.nbl1.com.au/",
-        "origin":  "https://www.nbl1.com.au",
-    },
+_SHORTCUTS_PATH = BASE_DIR / "shortcuts.json"
+_DEFAULT_SHORTCUTS: dict[str, str] = {
+    "start_game":       "a",
+    "stop_game":        "q",
+    "siren":            "w",
+    "sc_enable":        "f",
+    "sc_disable":       "r",
+    "sc_reset_14":      "t",
+    "sc_reset_24":      "g",
+    "sc_hide":          "y",
+    "possession_left":  "b",
+    "possession_right": "m",
+    "possession_off":   "n",
 }
 
 
-def _fetch_fixture_sync(fixture_id: str, league: str = "bv") -> dict[str, Any]:
-    """Blocking fetch + decode of the Sportradar embed-api fixture detail.
-    Called via asyncio.to_thread so we don't block the event loop."""
-    import urllib.request, urllib.error, gzip, zlib
-    cfg = LEAGUE_CONFIGS.get(league) or LEAGUE_CONFIGS["bv"]
-    url = cfg["url"].format(fid=fixture_id)
-    req = urllib.request.Request(url, headers={
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:151.0) Gecko/20100101 Firefox/151.0",
-        "Accept": "*/*",
-        "Accept-Language": "en-GB,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate",
-        "Referer": cfg["referer"],
-        "Origin":  cfg["origin"],
-    })
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        raw = resp.read()
-        enc = resp.headers.get("Content-Encoding", "").lower()
-    if enc == "gzip":
-        raw = gzip.decompress(raw)
-    elif enc == "deflate":
-        raw = zlib.decompress(raw)
-    return json.loads(raw)
+def _load_shortcuts() -> dict[str, str]:
+    if _SHORTCUTS_PATH.exists():
+        try:
+            return json.loads(_SHORTCUTS_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return dict(_DEFAULT_SHORTCUTS)
 
 
-def _parse_fixture(data: dict[str, Any]) -> dict[str, Any]:
-    """Pull out only team names + player numbers/names from the API blob.
-    Per user spec we deliberately ignore points and fouls."""
-    fixture = data.get("data", {}).get("banner", {}).get("fixture", {}) or {}
-    competitors = fixture.get("competitors", []) or []
-    home_info = next((c for c in competitors if c.get("isHome")), None)
-    away_info = next((c for c in competitors if c.get("isHome") is False), None)
+@app.get("/api/shortcuts")
+async def api_get_shortcuts() -> JSONResponse:
+    return JSONResponse(_load_shortcuts())
 
-    stats_base = (data.get("data", {})
-                      .get("statistics", {})
-                      .get("data", {})
-                      .get("base", {})) or {}
 
-    def _persons(side: str) -> list[dict]:
-        block = stats_base.get(side, {}) or {}
-        persons = block.get("persons") or []
-        if not persons:
-            return []
-        rows = persons[0].get("rows", []) or []
-        out = []
-        for r in rows:
-            number = str(r.get("bib") or "").strip()
-            name = (r.get("personName") or "").strip()
-            if not name and not number:
-                continue
-            # Only names + numbers per user spec. Default played=False --
-            # operator ticks the box (or records a stat) as each player
-            # actually takes the court.
-            out.append({"number": number, "name": name, "played": False})
-        return out
+@app.post("/api/shortcuts")
+async def api_save_shortcuts(body: dict[str, Any]) -> dict[str, Any]:
+    text = json.dumps(body, indent=2, ensure_ascii=False)
+    await asyncio.to_thread(_SHORTCUTS_PATH.write_text, text, "utf-8")
+    return {"ok": True}
 
-    return {
-        "home": {
-            "name":  (home_info or {}).get("name") or "HOME",
-            "players": _persons("home"),
-        },
-        "away": {
-            "name":  (away_info or {}).get("name") or "AWAY",
-            "players": _persons("away"),
-        },
-    }
 
+# --------------------------------------------------------------------------- #
+# Roster import (Sportradar / BasketballVictoria fixture detail)
+# --------------------------------------------------------------------------- #
 
 @app.post("/api/import-roster")
 async def api_import_roster(body: dict[str, Any]) -> dict[str, Any]:
@@ -634,17 +449,17 @@ async def api_import_roster(body: dict[str, Any]) -> dict[str, Any]:
     swap = bool(body.get("swap", False))
     if not fixture_id:
         raise HTTPException(status_code=400, detail="fixtureId is required")
-    if league not in LEAGUE_CONFIGS:
+    if league not in roster_import.LEAGUE_CONFIGS:
         raise HTTPException(status_code=400,
-                            detail=f"unknown league '{league}'; expected one of {list(LEAGUE_CONFIGS)}")
+                            detail=f"unknown league '{league}'; expected one of {list(roster_import.LEAGUE_CONFIGS)}")
 
     try:
-        data = await asyncio.to_thread(_fetch_fixture_sync, fixture_id, league)
+        data = await asyncio.to_thread(roster_import.fetch_fixture, fixture_id, league)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"upstream fetch failed: {e}")
 
     try:
-        parsed = _parse_fixture(data)
+        parsed = roster_import.parse_fixture(data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"parse failed: {e}")
 
@@ -660,6 +475,29 @@ async def api_import_roster(body: dict[str, Any]) -> dict[str, Any]:
         "home": {"name": a["name"], "count": len(a["players"])},
         "away": {"name": b["name"], "count": len(b["players"])},
     }
+
+
+# --------------------------------------------------------------------------- #
+# Config persistence
+# --------------------------------------------------------------------------- #
+
+@app.get("/api/config")
+async def api_get_config() -> JSONResponse:
+    return JSONResponse(_cfg)
+
+
+@app.post("/api/save-config")
+async def api_save_config() -> dict[str, Any]:
+    global _cfg
+    snap = game.snapshot()
+    new_cfg = {
+        "periods":      snap["periods"],
+        "timeout_mode": snap["timeout_mode"],
+        "timeout_max":  snap["timeout_max"],
+    }
+    await asyncio.to_thread(cfg_module.save, new_cfg)
+    _cfg = new_cfg
+    return {"ok": True}
 
 
 # --------------------------------------------------------------------------- #
@@ -685,7 +523,6 @@ async def ws_endpoint(ws: WebSocket) -> None:
 
             mtype = msg.get("type")
             if mtype == "ping":
-                # Respond ASAP to keep RTT honest.
                 await ws.send_text(json.dumps({
                     "type": "pong",
                     "client_t": msg.get("client_t"),
@@ -702,13 +539,6 @@ async def ws_endpoint(ws: WebSocket) -> None:
     finally:
         await hub.leave(ws)
         log.info("ws closed: %s", ws.client)
-
-
-# Schedule any buzzers on startup (in case state begins running, e.g. from a
-# future persistence layer).
-@app.on_event("startup")
-async def _on_startup() -> None:
-    reschedule_buzzers()
 
 
 if __name__ == "__main__":

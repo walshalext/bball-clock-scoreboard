@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Scoreboard</title>
+  <link rel="stylesheet" href="/common.css" />
   <style>
     /* Three-column scoreboard inspired by FIBA Official Basketball Rules
        2024 — Diagram 9, with a few deliberate departures for clarity on
@@ -40,7 +41,6 @@
          identical column boundaries. */
       --roster-cols: 3ch 1fr auto 3ch;
     }
-    * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; height: 100%; background: var(--bg);
                  color: var(--amber); overflow: hidden;
                  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -50,7 +50,7 @@
       display: grid;
       grid-template-columns: 1fr 1.25fr 1fr;
       gap: 1.5vw;
-      padding: 1.5vh 1.5vw 3.5vh;
+      padding: 1.5vh 1.5vw calc(var(--sb-height, 34px) + 1.5vh);
       width: 100vw; height: 100vh;
     }
     /* When ?rosters=off, the centre column takes the full width. */
@@ -135,8 +135,8 @@
 
     .centre {
       display: grid;
-      grid-template-rows: auto auto auto auto auto auto auto 1fr;
-      gap: 1vh;
+      grid-template-rows: auto auto auto auto 1fr;
+      gap: 2vh;
       align-items: center;
       text-align: center;
     }
@@ -145,9 +145,22 @@
             align-items: center; justify-items: center; }
 
     .team-name {
-      font-size: 5.5vh; font-weight: 900; color: var(--white);
-      letter-spacing: 0.07em; line-height: 1;
+      position: fixed; z-index: 70;
+      font-size: 4.5vh; font-weight: 900; color: var(--white);
+      letter-spacing: 0.07em; line-height: 1.15;
+      max-width: 28vw;
     }
+    #home-tname { left: 1.5vw; top: 1.5vh; text-align: left; }
+    #away-tname { right: 1.5vw; top: 1.5vh; text-align: right; }
+
+    /* Stat rows: [home value]  LABEL  [away value] */
+    .stat-row {
+      display: grid; grid-template-columns: 1fr auto 1fr;
+      gap: 2vw; align-items: center; width: 100%;
+    }
+    .stat-row > :first-child { justify-self: end; }
+    .stat-row > :last-child  { justify-self: start; }
+    .stat-row + .stat-row    { margin-top: 2vh; }
 
     .period-mid {
       justify-self: center;
@@ -165,27 +178,33 @@
     }
 
     .lbl {
-      font-size: 1.5vh; color: var(--muted);
-      letter-spacing: 0.3em; text-transform: uppercase;
-      margin-bottom: -0.4vh;
+      font-size: 2vh; color: #888;
+      letter-spacing: 0.25em; text-transform: uppercase;
     }
 
-    .tos { display: flex; justify-content: center; gap: 0.6vw; }
+    .tos { display: flex; justify-content: center; gap: 0.8vw; }
     .to-dot {
-      width: 2.2vh; height: 2.2vh;
+      width: 3vh; height: 3vh;
       background: var(--dim); border: 1px solid var(--border);
     }
     .to-dot.on { background: var(--yellow); border-color: var(--yellow); }
 
     .tf-value {
+      position: relative;
       display: inline-flex; align-items: center; justify-content: center;
-      font-size: 5vh; font-weight: 900; color: var(--white);
-      width: 8vh; height: 6.5vh;
+      font-size: 6.5vh; font-weight: 900; color: var(--white);
+      width: 8vh; height: 9.5vh;
       border: 0.35vh solid var(--white); border-radius: 0.6vh;
       line-height: 1;
     }
     .tf-value.bonus {
       color: transparent; background: var(--red); border-color: var(--red);
+    }
+    .tf-value.bonus::after {
+      content: "BONUS";
+      position: absolute; bottom: 0.8vh; left: 0; right: 0;
+      text-align: center; font-size: 1.3vh; font-weight: 700;
+      color: #fff; letter-spacing: 0.12em;
     }
 
     .clock-block { display: flex; flex-direction: column;
@@ -208,17 +227,6 @@
     /* ============================================================
        Footer + edge-lights (unchanged)
        ============================================================ */
-
-    .bottom {
-      position: fixed; left: 1vw; right: 1vw; bottom: 0.6vh;
-      display: flex; justify-content: space-between;
-      font-size: 1.4vh; color: var(--muted);
-    }
-    .conn-dot { display: inline-block; width: 1.1vh; height: 1.1vh;
-                border-radius: 50%; background: var(--muted);
-                margin-right: 0.6vh; vertical-align: middle; }
-    .conn-dot.ok  { background: var(--green); }
-    .conn-dot.bad { background: var(--red); }
 
     .edge-lights {
       position: fixed; inset: 0; pointer-events: none; z-index: 60;
@@ -250,11 +258,6 @@
 
   <!-- CENTRE -->
   <div class="centre">
-    <div class="pair">
-      <div class="team-name" id="home-tname">HOME</div>
-      <div class="team-name" id="away-tname">AWAY</div>
-    </div>
-
     <div class="period-mid" id="period-mid">-</div>
 
     <div class="pair">
@@ -262,15 +265,15 @@
       <div class="score" id="away-score">0</div>
     </div>
 
-    <div class="lbl">Time-outs</div>
-    <div class="pair">
+    <div class="stat-row">
       <div class="tos" id="home-tos"></div>
+      <div class="lbl">Time-outs</div>
       <div class="tos" id="away-tos"></div>
     </div>
 
-    <div class="lbl">Team fouls</div>
-    <div class="pair">
+    <div class="stat-row">
       <span class="tf-value" id="home-tf">0</span>
+      <div class="lbl">Team fouls</div>
       <span class="tf-value" id="away-tf">0</span>
     </div>
 
@@ -290,12 +293,10 @@
   </div>
 </div>
 
-<div class="bottom">
-  <span><span class="conn-dot" id="conn-dot"></span><span id="conn-text">…</span></span>
-  <span id="latency">—</span>
-</div>
-
 <div id="edge-lights" class="edge-lights"></div>
+
+<div class="team-name" id="home-tname"></div>
+<div class="team-name" id="away-tname"></div>
 
 <script src="/common.js"></script>
 <script>
@@ -410,8 +411,8 @@ function renderRoster(side, players) {
 
 // -------- Apply state snapshot --------
 function applyState(s) {
-  $("home-tname").textContent = (s.home.short || s.home.name || "HOME").toUpperCase();
-  $("away-tname").textContent = (s.away.short || s.away.name || "AWAY").toUpperCase();
+  $("home-tname").textContent = (s.home.name || "HOME").toUpperCase();
+  $("away-tname").textContent = (s.away.name || "AWAY").toUpperCase();
 
   $("home-score").textContent = s.home.score;
   $("away-score").textContent = s.away.score;
@@ -471,19 +472,7 @@ function tick() {
 }
 requestAnimationFrame(tick);
 
-// -------- Connection / latency / buzzer / fullscreen --------
-Scoreboard.onStatus((e) => {
-  const dot = $("conn-dot"), txt = $("conn-text");
-  dot.className = "conn-dot";
-  if (e.status === "open") { dot.classList.add("ok"); txt.textContent = "live"; }
-  else if (e.status === "closed") { dot.classList.add("bad"); txt.textContent = "offline"; }
-  else { txt.textContent = e.status; }
-});
-setInterval(() => {
-  const rtt = Scoreboard.getBestRttMs();
-  $("latency").textContent = isFinite(rtt) ? `rtt ${rtt.toFixed(1)}ms` : "—";
-}, 500);
-
+// -------- Buzzer / fullscreen --------
 Scoreboard.onBuzzer((b) => {
   const el = $("edge-lights");
   if (b.kind === "period") {
@@ -495,12 +484,6 @@ Scoreboard.onBuzzer((b) => {
   }
 });
 
-document.addEventListener("keydown", (e) => {
-  if (e.key === "f" || e.key === "F") {
-    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
-    else document.exitFullscreen();
-  }
-});
 
 Scoreboard.connect();
 </script>

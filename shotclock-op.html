@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
   <title>Shot Clock Op</title>
+  <link rel="stylesheet" href="/common.css" />
   <style>
     /* ------------------------------------------------------------------- *
      * Shot-clock operator console.
@@ -13,24 +14,7 @@
      * - Game-clock is shown read-only beside it as context.
      * - Independent + hide are dedicated big toggles in the bottom half.
      * --------------------------------------------------------------------*/
-    :root {
-      --bg: #0e1116;
-      --panel: #161b22;
-      --panel-2: #1f262f;
-      --panel-3: #28303a;
-      --border: #2a313c;
-      --text: #e6edf3;
-      --muted: #8b949e;
-      --accent: #ff8c1a;
-      --green: #2ea043;
-      --green-2: #46c563;
-      --red: #da3633;
-      --red-2: #ff5247;
-      --yellow: #d4a017;
-      --cyan: #22d3ee;
-      --blue: #2f81f7;
-    }
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    * { -webkit-tap-highlight-color: transparent; }
     html, body {
       margin: 0; padding: 0; height: 100%; overflow: hidden;
       background: var(--bg); color: var(--text);
@@ -42,7 +26,7 @@
 
     .app { display: grid;
            grid-template-rows: minmax(0, 52fr) minmax(0, 48fr);
-           height: 100vh; gap: 6px; padding: 6px; }
+           height: calc(100vh - var(--sb-height, 34px)); gap: 6px; padding: 6px; }
 
     /* ---- top: indicators ---- */
     .top {
@@ -166,11 +150,6 @@
     .legend { font-size: 10px; color: var(--muted); padding: 2px 4px;
               text-transform: uppercase; letter-spacing: 1.5px; }
 
-    .status-strip {
-      position: fixed; bottom: 4px; left: 6px; right: 6px;
-      display: flex; gap: 14px; font-size: 10px; color: var(--muted);
-      pointer-events: none; opacity: 0.7;
-    }
 
     /* Big banner when the shot clock is hidden — so the operator can't
        accidentally leave it hidden across plays. */
@@ -233,15 +212,15 @@
     <div class="pane">
       <h3>Shot clock — controls</h3>
       <div class="row cols-2">
-        <button id="btn-start" class="start">▶ START <span class="legend">(Space)</span></button>
-        <button id="btn-stop"  class="stop" >■ PAUSE <span class="legend">(P)</span></button>
+        <button id="btn-start" class="start" data-action="sc_enable" >▶ START <span class="key-hint"></span></button>
+        <button id="btn-stop"  class="stop"  data-action="sc_disable">■ PAUSE <span class="key-hint"></span></button>
       </div>
 
       <h3>Reset / hide</h3>
       <div class="row cols-3">
-        <button class="reset24" data-sc-reset="24">24 <span class="legend">(2)</span></button>
-        <button class="reset14" data-sc-reset="14">14 <span class="legend">(4)</span></button>
-        <button id="btn-hide" class="hide-btn">HIDE <span class="legend">(V)</span></button>
+        <button class="reset24" data-sc-reset="24" data-action="sc_reset_24">24 <span class="key-hint"></span></button>
+        <button class="reset14" data-sc-reset="14" data-action="sc_reset_14">14 <span class="key-hint"></span></button>
+        <button id="btn-hide" class="hide-btn"     data-action="sc_hide">HIDE <span class="key-hint"></span></button>
       </div>
 
       <h3>Adjust</h3>
@@ -257,13 +236,13 @@
     <div class="pane">
       <h3>Modes</h3>
       <button id="btn-indep" class="ghost" style="min-height:80px; font-size:20px;">
-        Independent: OFF <span class="legend">(I)</span>
+        Independent: OFF
       </button>
       <!-- SHOW lives here as a recovery action -- you only ever press it
            when you've hit HIDE by mistake. Normal "un-hide" happens
            automatically via the 24/14 reset. -->
       <button id="btn-show"  class="ghost on-cyan" style="min-height:80px; font-size:22px; display:none">
-        ↺ SHOW shot clock <span class="legend">(V)</span>
+        ↺ SHOW shot clock
       </button>
       <div class="legend" style="padding: 6px 4px; line-height: 1.4;">
         HIDE (in the reset row) pauses the clock — press it every time the
@@ -274,12 +253,6 @@
     </div>
 
   </div>
-</div>
-
-<div class="status-strip">
-  <span id="ws-status">connecting…</span>
-  <span id="rtt-status"></span>
-  <span style="margin-left:auto">/shotclock-op — operator console</span>
 </div>
 
 <script src="/common.js"></script>
@@ -301,8 +274,6 @@
   const btnIndep    = $("btn-indep");
   const btnHide     = $("btn-hide");
   const btnShow     = $("btn-show");
-  const wsStatusEl  = $("ws-status");
-  const rttStatusEl = $("rtt-status");
 
   // ---------------------------------------------------------------------- //
   // Render loop
@@ -387,22 +358,6 @@
   }
 
   // ---------------------------------------------------------------------- //
-  // Status display
-  // ---------------------------------------------------------------------- //
-  Scoreboard.onStatus(({ status }) => {
-    wsStatusEl.textContent = status === "open" ? "● live"
-                           : status === "connecting" ? "connecting…"
-                           : "● disconnected";
-    wsStatusEl.style.color = status === "open" ? "var(--green-2)"
-                            : status === "connecting" ? "var(--muted)"
-                            : "var(--red-2)";
-  });
-  setInterval(() => {
-    const rtt = Scoreboard.getBestRttMs();
-    rttStatusEl.textContent = isFinite(rtt) ? `RTT ${rtt.toFixed(0)}ms` : "";
-  }, 1000);
-
-  // ---------------------------------------------------------------------- //
   // Wire buttons
   //
   // "Start" / "Pause" map to sc_enable / sc_disable — i.e. the operator's
@@ -426,38 +381,6 @@
   document.querySelectorAll("[data-sc-adjust]").forEach(b => {
     b.addEventListener("click", () =>
       Scoreboard.sendCommand("sc_adjust", { delta_ms: Number(b.dataset.scAdjust) }));
-  });
-
-  // ---------------------------------------------------------------------- //
-  // Keyboard shortcuts
-  //
-  //   Space       -> sc_enable      (start)
-  //   P           -> sc_disable     (pause)
-  //   2 / 4       -> reset to 24 / 14
-  //   ArrowR/L    -> ± 1 second
-  //   Shift+R/L   -> ± 0.1 second
-  //   I           -> toggle independent
-  //   V           -> toggle visibility (hide/show)
-  //
-  // ---------------------------------------------------------------------- //
-  document.addEventListener("keydown", (e) => {
-    if (e.target && e.target.tagName === "INPUT") return;
-    if (e.repeat) return;
-    const k = e.key;
-    if (e.code === "Space")        { e.preventDefault(); Scoreboard.sendCommand("sc_enable"); }
-    else if (k === "p" || k === "P") Scoreboard.sendCommand("sc_disable");
-    else if (k === "2")              Scoreboard.sendCommand("sc_reset_24");
-    else if (k === "4")              Scoreboard.sendCommand("sc_reset_14");
-    else if (k === "ArrowRight") {
-      Scoreboard.sendCommand("sc_adjust",
-        { delta_ms: e.shiftKey ? 100 : 1000 });
-    }
-    else if (k === "ArrowLeft") {
-      Scoreboard.sendCommand("sc_adjust",
-        { delta_ms: e.shiftKey ? -100 : -1000 });
-    }
-    else if (k === "i" || k === "I") Scoreboard.sendCommand("sc_toggle_independent");
-    else if (k === "v" || k === "V") Scoreboard.sendCommand("sc_toggle_visible");
   });
 
   // ---------------------------------------------------------------------- //

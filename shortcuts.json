@@ -1,0 +1,13 @@
+{
+  "start_game":       "a",
+  "stop_game":        "q",
+  "siren":            "w",
+  "sc_enable":        "f",
+  "sc_disable":       "r",
+  "sc_reset_14":      "t",
+  "sc_reset_24":      "g",
+  "sc_hide":          "y",
+  "possession_left":  "b",
+  "possession_right": "m",
+  "possession_off":   "n"
+}

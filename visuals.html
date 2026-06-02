@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
   <title>Visuals Op</title>
+  <link rel="stylesheet" href="/common.css" />
   <style>
     /* ------------------------------------------------------------------- *
      * Visuals operator console (FIBA scorer's table).
@@ -22,25 +23,7 @@
      * Touch-tuned for a ~10–12" landscape tablet, but reflows to a single
      * column on phone-portrait so the scorer can use a phone in a pinch.
      * --------------------------------------------------------------------*/
-    :root {
-      --bg: #0e1116;
-      --panel: #161b22;
-      --panel-2: #1f262f;
-      --panel-3: #28303a;
-      --border: #2a313c;
-      --text: #e6edf3;
-      --muted: #8b949e;
-      --accent: #ff8c1a;
-      --accent-dim: #b96712;
-      --green: #2ea043;
-      --green-2: #46c563;
-      --red: #da3633;
-      --red-2: #ff5247;
-      --yellow: #d4a017;
-      --blue: #2f81f7;
-      --cyan: #22d3ee;
-    }
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    * { -webkit-tap-highlight-color: transparent; }
     html, body {
       margin: 0; padding: 0; height: 100%;
       background: var(--bg); color: var(--text);
@@ -297,12 +280,6 @@
     .foot-bar button { background: var(--accent-dim); border-color: var(--accent);
                        color: #fff; font-size: 16px; min-height: 50px; }
 
-    .status-strip {
-      position: fixed; top: 4px; right: 8px;
-      display: flex; gap: 10px; font-size: 10px; color: var(--muted);
-      pointer-events: none; opacity: 0.7; z-index: 11;
-    }
-
     @media (max-width: 540px) {
       /* On phone-portrait, drop the per-player score-minus and foul-undo
          columns so the row stays readable; ±1 / −F are still on /.
@@ -398,12 +375,6 @@
   <button id="btn-reset-timeouts">Reset time-outs (both)</button>
 </div>
 
-<div class="status-strip">
-  <span id="ws-status">connecting…</span>
-  <span id="rtt-status"></span>
-  <span>/visuals — scorer console</span>
-</div>
-
 <script src="/common.js"></script>
 <script>
 (() => {
@@ -480,10 +451,7 @@
     `;
   }
 
-  function escapeHTML(s) {
-    return String(s).replace(/[&<>"']/g, (c) =>
-      ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
-  }
+  const escapeHTML = Scoreboard.escapeHTML;
 
   // ---------- click delegation ----------
   document.body.addEventListener("click", (ev) => {
@@ -563,23 +531,6 @@
     }
   });
 
-  // ---------- keyboard ----------
-  // The scorer is mostly tapping, but a few power-user shortcuts help.
-  //
-  //   [   /   ]    -> period -/+
-  //   R            -> reset team fouls (both)
-  //   T            -> reset time-outs (both)
-  //
-  // Per-team score/foul/TO are NOT keyboard-bound since you'd be ambiguous
-  // about which team. The buttons themselves are big enough to tap fast.
-  document.addEventListener("keydown", (e) => {
-    if (e.target && e.target.tagName === "INPUT") return;
-    if (e.repeat) return;
-    if      (e.key === "[")            Scoreboard.sendCommand("adjust_period", { delta: -1 });
-    else if (e.key === "]")            Scoreboard.sendCommand("adjust_period", { delta:  1 });
-    else if (e.key === "r" || e.key === "R") Scoreboard.sendCommand("reset_team_fouls");
-    else if (e.key === "t" || e.key === "T") Scoreboard.sendCommand("reset_timeouts");
-  });
 
   // ---------- render loop (driven by state, but throttled by raf) ----------
   let dirty = true;
@@ -661,51 +612,30 @@
   }
 
   function renderRoster(host, side, players) {
-    // Rebuild if count changed; otherwise update in place to avoid wiping
-    // any pressed-state.
-    if (!host.dataset.built || +host.dataset.built !== players.length) {
-      host.innerHTML = players.map((p, i) => playerRowHTML(i, p)).join("");
-      host.dataset.built = players.length;
-      return;
-    }
-    players.forEach((p, i) => {
-      const row = host.children[i];
-      if (!row) return;
-      const played = p.played !== false;
-      row.classList.toggle("disqualified", !!p.disqualified);
-      row.classList.toggle("notplayed", !played);
-      row.querySelector('[data-bind="num"]').textContent  = p.number || "";
-      row.querySelector('[data-bind="name"]').textContent = p.name || "";
-      const pf = row.querySelector('[data-bind="pf"]');
-      pf.textContent = played ? p.fouls : "—";
-      pf.classList.toggle("f4", played && p.fouls === 4);
-      pf.classList.toggle("f5", played && p.fouls >= 5);
-      row.querySelector('[data-bind="pp"]').textContent = played ? p.points : "—";
-      const playedBtn = row.querySelector('[data-bind="played-btn"]');
-      if (playedBtn) {
-        playedBtn.classList.toggle("on", played);
-        playedBtn.textContent = played ? "✓" : "○";
-        playedBtn.title = played ? "Has played in this game"
-                                 : "Tap when player first takes the court";
+    Scoreboard.patchRoster(
+      host, players,
+      (p, i) => playerRowHTML(i, p),
+      (row, p) => {
+        const played = p.played !== false;
+        row.classList.toggle("disqualified", !!p.disqualified);
+        row.classList.toggle("notplayed", !played);
+        row.querySelector('[data-bind="num"]').textContent  = p.number || "";
+        row.querySelector('[data-bind="name"]').textContent = p.name || "";
+        const pf = row.querySelector('[data-bind="pf"]');
+        pf.textContent = played ? p.fouls : "—";
+        pf.classList.toggle("f4", played && p.fouls === 4);
+        pf.classList.toggle("f5", played && p.fouls >= 5);
+        row.querySelector('[data-bind="pp"]').textContent = played ? p.points : "—";
+        const playedBtn = row.querySelector('[data-bind="played-btn"]');
+        if (playedBtn) {
+          playedBtn.classList.toggle("on", played);
+          playedBtn.textContent = played ? "✓" : "○";
+          playedBtn.title = played ? "Has played in this game"
+                                   : "Tap when player first takes the court";
+        }
       }
-    });
+    );
   }
-
-  // ---------- status display ----------
-  const wsStatusEl  = $("ws-status");
-  const rttStatusEl = $("rtt-status");
-  Scoreboard.onStatus(({ status }) => {
-    wsStatusEl.textContent = status === "open" ? "● live"
-                           : status === "connecting" ? "connecting…"
-                           : "● disconnected";
-    wsStatusEl.style.color = status === "open" ? "var(--green-2)"
-                            : status === "connecting" ? "var(--muted)"
-                            : "var(--red-2)";
-  });
-  setInterval(() => {
-    const rtt = Scoreboard.getBestRttMs();
-    rttStatusEl.textContent = isFinite(rtt) ? `RTT ${rtt.toFixed(0)}ms` : "";
-  }, 1000);
 
   Scoreboard.connect();
 })();

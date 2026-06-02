@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>Key Bindings</title>
+  <link rel="stylesheet" href="/common.css" />
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; padding: 0;
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   Oxygen, Ubuntu, sans-serif;
+      -webkit-user-select: none; user-select: none;
+    }
+    body { padding: 0 0 calc(var(--sb-height) + 16px); }
+
+    .page-head {
+      padding: 20px 20px 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+    .page-head h1 {
+      margin: 0 0 4px;
+      font-size: 20px; font-weight: 800; color: var(--text);
+    }
+    .page-head p {
+      margin: 0 0 16px;
+      font-size: 13px; color: var(--muted); line-height: 1.5;
+    }
+
+    .section {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 0 16px;
+    }
+
+    /* ---- shortcut rows ---- */
+    .shortcut-list {
+      display: flex; flex-direction: column; gap: 6px;
+      margin-bottom: 20px;
+    }
+    .shortcut-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 12px;
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px 14px;
+    }
+    .shortcut-row.capturing {
+      border-color: var(--accent);
+      background: #231a0e;
+    }
+    .action-label {
+      font-size: 14px; font-weight: 600; color: var(--text);
+      line-height: 1.2;
+    }
+    .action-desc {
+      font-size: 11px; color: var(--muted); margin-top: 2px;
+    }
+
+    .key-badge {
+      min-width: 42px; height: 38px;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 15px; font-weight: 800; color: var(--text);
+      cursor: pointer; padding: 0 10px;
+      transition: background .08s, border-color .08s;
+      white-space: nowrap;
+    }
+    .key-badge:hover { background: var(--panel-3); border-color: var(--muted); }
+    .key-badge.capturing {
+      background: var(--accent); border-color: var(--accent);
+      color: #111; font-size: 11px; font-weight: 700;
+      letter-spacing: 0.5px; animation: capturePulse .7s ease-in-out infinite;
+    }
+    .key-badge.unset {
+      color: var(--muted); font-size: 12px; font-weight: 600;
+    }
+    @keyframes capturePulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.6; }
+    }
+
+    /* ---- footer buttons ---- */
+    .foot-row {
+      display: flex; gap: 10px; flex-wrap: wrap; margin-top: 24px;
+    }
+    button {
+      background: var(--panel-2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 20px; font-size: 14px; font-weight: 700;
+      cursor: pointer; font-family: inherit;
+      transition: background .06s;
+    }
+    button:active { filter: brightness(1.2); }
+    button.primary {
+      background: var(--accent); border-color: var(--accent); color: #111;
+    }
+    button.ghost {
+      background: transparent; color: var(--muted);
+    }
+
+    .status-msg {
+      font-size: 13px; color: var(--muted); padding: 6px 0;
+      min-height: 22px;
+    }
+    .status-msg.ok    { color: var(--green); }
+    .status-msg.error { color: var(--red-2); }
+
+    /* ---- conflict warning on a row ---- */
+    .conflict-tag {
+      font-size: 10px; font-weight: 700; letter-spacing: 1px;
+      padding: 2px 7px; border-radius: 999px;
+      background: var(--red); color: #fff;
+      margin-left: 8px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="page-head">
+  <div class="section">
+    <h1>Key Bindings</h1>
+    <p>
+      Click any key badge to reassign it. Press the new key — or Escape to cancel.
+      Bindings are saved to <code>shortcuts.json</code> and take effect on all pages immediately.
+    </p>
+  </div>
+</div>
+
+<div class="section">
+  <div class="shortcut-list" id="shortcut-list"></div>
+  <div class="foot-row">
+    <button class="primary" id="btn-save">Save bindings</button>
+    <button class="ghost"   id="btn-reset">Reset to defaults</button>
+  </div>
+  <div class="status-msg" id="status"></div>
+</div>
+
+<script src="/common.js"></script>
+<script>
+(() => {
+  "use strict";
+
+  const ACTION_META = [
+    { action: "start_game",       label: "Start game clock",         group: "Game clock"  },
+    { action: "stop_game",        label: "Pause game clock",         group: "Game clock"  },
+    { action: "siren",            label: "Siren",                    group: "Game clock", desc: "Hold to activate" },
+    { action: "sc_enable",        label: "Start shot clock",         group: "Shot clock"  },
+    { action: "sc_disable",       label: "Pause shot clock",         group: "Shot clock"  },
+    { action: "sc_reset_24",      label: "Reset shot clock — 24s",   group: "Shot clock"  },
+    { action: "sc_reset_14",      label: "Reset shot clock — 14s",   group: "Shot clock"  },
+    { action: "sc_hide",          label: "Hide / show shot clock",   group: "Shot clock"  },
+    { action: "possession_left",  label: "Possession → Left",        group: "Possession"  },
+    { action: "possession_right", label: "Possession → Right",       group: "Possession"  },
+    { action: "possession_off",   label: "Possession → Off",         group: "Possession"  },
+  ];
+
+  const DEFAULTS = {
+    start_game: "a", stop_game: "q", siren: "w",
+    sc_enable: "f", sc_disable: "r", sc_reset_14: "t", sc_reset_24: "g", sc_hide: "y",
+    possession_left: "b", possession_right: "m", possession_off: "n",
+  };
+
+  // Working copy — starts as whatever the server currently has.
+  let bindings = {};
+  let capturing = null;   // action string currently being captured, or null
+
+  // ---- build DOM ----
+
+  const listEl   = document.getElementById("shortcut-list");
+  const statusEl = document.getElementById("status");
+
+  function buildList() {
+    listEl.innerHTML = "";
+    let lastGroup = null;
+    for (const meta of ACTION_META) {
+      if (meta.group !== lastGroup) {
+        const hdr = document.createElement("div");
+        hdr.style.cssText = "font-size:10px;color:var(--muted);text-transform:uppercase;" +
+                            "letter-spacing:2px;padding:10px 2px 4px;font-weight:700;";
+        hdr.textContent = meta.group;
+        listEl.appendChild(hdr);
+        lastGroup = meta.group;
+      }
+      const row = document.createElement("div");
+      row.className = "shortcut-row";
+      row.dataset.action = meta.action;
+
+      const info = document.createElement("div");
+      info.innerHTML =
+        `<div class="action-label">${meta.label}</div>` +
+        (meta.desc ? `<div class="action-desc">${meta.desc}</div>` : "");
+      row.appendChild(info);
+
+      const badge = document.createElement("div");
+      badge.className = "key-badge";
+      badge.dataset.badge = meta.action;
+      badge.setAttribute("tabindex", "0");
+      badge.setAttribute("role", "button");
+      badge.setAttribute("aria-label", `Key for ${meta.label}`);
+      row.appendChild(badge);
+
+      listEl.appendChild(row);
+    }
+    refreshBadges();
+  }
+
+  function refreshBadges() {
+    // Detect conflicts: multiple actions with the same key
+    const keyCount = {};
+    for (const [, key] of Object.entries(bindings)) {
+      if (key) keyCount[key.toLowerCase()] = (keyCount[key.toLowerCase()] || 0) + 1;
+    }
+
+    document.querySelectorAll("[data-badge]").forEach(badge => {
+      const action  = badge.dataset.badge;
+      const key     = bindings[action];
+      const isCapturing = capturing === action;
+
+      badge.className = "key-badge" +
+        (isCapturing ? " capturing" : "") +
+        (!key && !isCapturing ? " unset" : "");
+      badge.textContent = isCapturing ? "press a key…"
+                        : key ? key.toUpperCase()
+                        : "—";
+
+      // Show conflict indicator on the row
+      const row = badge.closest(".shortcut-row");
+      const existing = row.querySelector(".conflict-tag");
+      if (existing) existing.remove();
+      if (key && keyCount[key.toLowerCase()] > 1 && !isCapturing) {
+        const tag = document.createElement("span");
+        tag.className = "conflict-tag";
+        tag.textContent = "CONFLICT";
+        badge.after(tag);
+      }
+
+      // Highlight the whole row while capturing
+      row.classList.toggle("capturing", isCapturing);
+    });
+  }
+
+  // ---- interaction ----
+
+  listEl.addEventListener("click", (e) => {
+    const badge = e.target.closest("[data-badge]");
+    if (!badge) return;
+    const action = badge.dataset.badge;
+    capturing = (capturing === action) ? null : action;
+    refreshBadges();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (!capturing) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();   // prevent global shortcut handler from firing
+
+    if (e.key === "Escape" || e.key === "Tab") {
+      capturing = null;
+      refreshBadges();
+      return;
+    }
+
+    // Accept printable single characters and a few named keys.
+    const key = e.key.length === 1 ? e.key.toLowerCase() : null;
+    if (!key) return;
+
+    bindings[capturing] = key;
+    capturing = null;
+    refreshBadges();
+  }, true);  // capture phase so we beat the global handler
+
+  // ---- save / reset ----
+
+  document.getElementById("btn-save").addEventListener("click", async () => {
+    statusEl.textContent = "Saving…";
+    statusEl.className = "status-msg";
+    try {
+      await Scoreboard.saveShortcuts({ ...bindings });
+      statusEl.textContent = "Saved — bindings are live on all pages.";
+      statusEl.className = "status-msg ok";
+    } catch (e) {
+      statusEl.textContent = `Error: ${e.message || e}`;
+      statusEl.className = "status-msg error";
+    }
+  });
+
+  document.getElementById("btn-reset").addEventListener("click", () => {
+    bindings = { ...DEFAULTS };
+    refreshBadges();
+    statusEl.textContent = "Defaults loaded — press Save to apply.";
+    statusEl.className = "status-msg";
+  });
+
+  // ---- boot ----
+  // Fetch the server's current bindings, then render.
+  // Scoreboard.getShortcuts() is populated async by common.js; we wait for
+  // the same /api/shortcuts fetch to avoid a double-request.
+  (async () => {
+    try {
+      const r = await fetch("/api/shortcuts");
+      if (r.ok) bindings = await r.json();
+      else bindings = { ...DEFAULTS };
+    } catch {
+      bindings = { ...DEFAULTS };
+    }
+    buildList();
+  })();
+
+  Scoreboard.connect();
+})();
+</script>
+</body>
+</html>
