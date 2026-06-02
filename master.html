@@ -86,7 +86,7 @@
       text-transform: uppercase; letter-spacing: 0.2rem;
     }
     .score-display {
-      font-size: 17vh; font-weight: 900; color: var(--red);
+      font-size: 13vh; font-weight: 900; color: var(--red);
       text-align: center; line-height: 1;
       text-shadow: 0 0 14px rgba(255,48,48,0.5);
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -188,10 +188,29 @@
     button.siren { min-height: 0; }
 
     .period-row {
-      display: grid; grid-template-columns: auto 1fr auto;
+      display: grid; grid-template-columns: auto 1fr auto auto;
       gap: 0.6rem; align-items: center;
     }
     .period-row button { min-height: 7vh; width: 7vh; padding: 0; font-size: 2.8vh; }
+    /* Settings button is text, not a symbol — needs auto width */
+    #btn-period-settings { width: auto; padding: 0 0.8rem; font-size: 1.6vh; }
+
+    /* Period reset popup sections */
+    .pr-section { display: flex; flex-direction: column; gap: 0.6rem; flex-shrink: 0; }
+    .pr-toggle-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+    .pr-section button { min-height: 8vh; font-size: 2.5vh; }
+    /* Hold-to-reset button */
+    .hold-reset {
+      --hold: 0%;
+      position: relative; overflow: hidden;
+      border-color: var(--red); touch-action: none;
+    }
+    .hold-reset::before {
+      content: ""; position: absolute; inset: 0 auto 0 0;
+      width: var(--hold); background: var(--red); transition: width .08s linear;
+    }
+    .hold-reset span { position: relative; z-index: 1; }
+    .pr-reset-hint { font-size: 1.1rem; color: var(--muted); text-align: center; }
     .period-display {
       justify-self: center;
       font-size: 4vh; font-weight: 900; color: var(--text);
@@ -288,7 +307,7 @@
     }
     button.hide-btn.armed { box-shadow: 0 0 14px -2px var(--accent); }
 
-    .score-btns button { min-height: 10vh; font-size: 2.8vh; }
+    .score-btns button { min-height: 7vh; font-size: 2.8vh; }
 
     /* START/STOP get slightly larger font in the clock grid */
     .clock-btns button.start,
@@ -393,6 +412,79 @@
     }
 
     /* ============================================================
+       Player grid
+       ============================================================ */
+    .player-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 0.4rem;
+    }
+    .player-tile {
+      aspect-ratio: 1;
+      background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 0.8rem;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: space-between;
+      padding: 0.35rem 0.25rem;
+      cursor: pointer; touch-action: manipulation;
+      transition: background 0.08s, border-color 0.08s, opacity 0.12s;
+      opacity: 0.38;   /* bench: desaturated */
+      min-height: 0;
+    }
+    .player-tile.played {
+      opacity: 1;
+      border-color: var(--panel-3);
+    }
+    .player-tile:active { filter: brightness(1.3); }
+    .player-pts {
+      font-size: 1.2vh; color: var(--muted); line-height: 1;
+      align-self: flex-end;
+    }
+    .player-num {
+      font-size: 2.8vh; font-weight: 900; color: var(--text); line-height: 1;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .player-fouls { display: flex; gap: 0.2rem; align-items: center; }
+    .player-foul-dot {
+      width: 0.7vh; height: 0.7vh; border-radius: 50%;
+      background: var(--panel-3); border: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .player-foul-dot.on       { background: var(--accent); border-color: var(--accent); }
+    .player-foul-dot.on.fifth { background: var(--red);    border-color: var(--red); }
+
+    /* ============================================================
+       Player popup internals
+       ============================================================ */
+    .pp-identity {
+      display: flex; gap: 0.8rem; align-items: center; flex-shrink: 0;
+    }
+    .pp-input {
+      background: var(--panel-2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 1rem;
+      padding: 0.8rem; font-size: 2rem; font-family: inherit;
+      min-width: 0;
+    }
+    .pp-num-input { width: 5.5rem; text-align: center; font-weight: 700; }
+    .pp-name-input { flex: 1; }
+    .pp-section { display: flex; flex-direction: column; gap: 0.8rem; flex-shrink: 0; }
+    .pp-label {
+      font-size: 1.1rem; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.2rem;
+    }
+    .pp-label strong { color: var(--text); font-variant-numeric: tabular-nums; }
+    .pp-pts-row  { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 0.6rem; }
+    .pp-foul-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+    .pp-section button { min-height: 9vh; font-size: 3vh; }
+    .pp-dots { display: flex; gap: 0.6rem; align-items: center; }
+    .pp-dot {
+      width: 2.4rem; height: 2.4rem; border-radius: 50%;
+      background: var(--panel-3); border: 1px solid var(--border);
+    }
+    .pp-dot.on       { background: var(--accent); border-color: var(--accent); }
+    .pp-dot.on.fifth { background: var(--red);    border-color: var(--red); }
+
+    /* ============================================================
        Edge lights
        ============================================================ */
     .edge-lights {
@@ -428,14 +520,18 @@
       </div>
     </div>
 
+    <div class="card" style="padding: 0.8rem;">
+      <div class="player-grid" id="home-players"></div>
+    </div>
+
     <div class="card">
       <div class="ctrl-row">
         <div class="stat-box" id="home-fouls-box">
           <span class="stat-num" id="home-fouls">0</span>
           <span class="stat-lbl" id="home-fouls-lbl">Fouls</span>
         </div>
-        <button data-team="home" data-act="foul-add">+F</button>
-        <button data-team="home" data-act="foul-sub">−F</button>
+        <button data-team="home" data-act="foul-add">+Foul</button>
+        <button data-team="home" data-act="foul-sub">−Foul</button>
         <button data-team="home" data-act="bonus-toggle" id="home-bonus-btn" class="ghost">Bonus</button>
       </div>
       <div class="ctrl-row">
@@ -443,8 +539,8 @@
           <div class="tos" id="home-tos"></div>
           <span class="stat-lbl">T/O</span>
         </div>
-        <button data-team="home" data-act="to-add">+TO</button>
-        <button data-team="home" data-act="to-sub">−TO</button>
+        <button data-team="home" data-act="to-add">Take timeout</button>
+        <button data-team="home" data-act="to-sub">Undo timeout</button>
       </div>
     </div>
 
@@ -462,6 +558,7 @@
         <button id="btn-period-down">−</button>
         <div class="period-display" id="period-display">PRE</div>
         <button id="btn-period-up">+</button>
+        <button id="btn-period-settings" class="ghost">Reset</button>
       </div>
       <div class="clock-main-row">
         <div class="clock-left">
@@ -543,14 +640,18 @@
       </div>
     </div>
 
+    <div class="card" style="padding: 0.8rem;">
+      <div class="player-grid" id="away-players"></div>
+    </div>
+
     <div class="card">
       <div class="ctrl-row">
         <div class="stat-box" id="away-fouls-box">
           <span class="stat-num" id="away-fouls">0</span>
           <span class="stat-lbl" id="away-fouls-lbl">Fouls</span>
         </div>
-        <button data-team="away" data-act="foul-add">+F</button>
-        <button data-team="away" data-act="foul-sub">−F</button>
+        <button data-team="away" data-act="foul-add">+Foul</button>
+        <button data-team="away" data-act="foul-sub">−Foul</button>
         <button data-team="away" data-act="bonus-toggle" id="away-bonus-btn" class="ghost">Bonus</button>
       </div>
       <div class="ctrl-row">
@@ -558,8 +659,8 @@
           <div class="tos" id="away-tos"></div>
           <span class="stat-lbl">T/O</span>
         </div>
-        <button data-team="away" data-act="to-add">+TO</button>
-        <button data-team="away" data-act="to-sub">−TO</button>
+        <button data-team="away" data-act="to-add">Take timeout</button>
+        <button data-team="away" data-act="to-sub">Undo timeout</button>
       </div>
     </div>
 
@@ -686,6 +787,82 @@
   </div>
 </div>
 
+<!-- ======================================================= PERIOD RESET POPUP -->
+<div class="popup-backdrop" id="popup-period-reset">
+  <div class="popup">
+    <div class="popup-head">
+      <span class="popup-title">Halftime / Reset</span>
+      <button class="popup-x" id="popup-pr-x">✕</button>
+    </div>
+    <div class="popup-body">
+      <div class="pr-section">
+        <div class="pp-label">Reset</div>
+        <button id="pr-reset-timeouts" class="warn">Reset timeouts (both teams)</button>
+        <button id="pr-reset-fouls"    class="warn">Reset team fouls (both teams)</button>
+      </div>
+      <div class="pr-section">
+        <div class="pp-label">Timeout display</div>
+        <div class="pr-toggle-row">
+          <button id="pr-mode-rem"  class="ghost">Remaining</button>
+          <button id="pr-mode-taken" class="ghost">Taken</button>
+        </div>
+      </div>
+      <div class="pr-section">
+        <div class="pp-label">Timeout dots</div>
+        <div class="pr-toggle-row">
+          <button id="pr-max-2" class="ghost">2 dots</button>
+          <button id="pr-max-3" class="ghost">3 dots</button>
+        </div>
+      </div>
+      <div class="pr-section">
+        <div class="pp-label">Full game reset</div>
+        <button id="pr-reset-hold" class="hold-reset danger"><span>Hold 5s to reset everything</span></button>
+        <div class="pr-reset-hint" id="pr-reset-hint">Resets scores, fouls, timeouts, rosters, clocks and period.</div>
+      </div>
+    </div>
+    <div class="popup-foot">
+      <button id="popup-pr-close" class="primary">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======================================================= PLAYER POPUP -->
+<div class="popup-backdrop" id="popup-player">
+  <div class="popup">
+    <div class="popup-head">
+      <span class="popup-title" id="pp-title">Player</span>
+      <button class="popup-x" id="popup-player-x">✕</button>
+    </div>
+    <div class="popup-body">
+      <div class="pp-identity">
+        <input type="text" id="pp-number" class="pp-input pp-num-input" maxlength="3" placeholder="#" />
+        <input type="text" id="pp-name"   class="pp-input pp-name-input" maxlength="24" placeholder="Name" />
+        <button id="pp-played" class="ghost">On bench</button>
+      </div>
+      <div class="pp-section">
+        <div class="pp-label">Points — <strong id="pp-pts-count">0</strong></div>
+        <div class="pp-pts-row">
+          <button class="warn" data-pp-pts="1">+1</button>
+          <button class="warn" data-pp-pts="2">+2</button>
+          <button class="warn" data-pp-pts="3">+3</button>
+          <button data-pp-pts="-1">−1</button>
+        </div>
+      </div>
+      <div class="pp-section">
+        <div class="pp-label">Fouls — <strong id="pp-fouls-count">0</strong></div>
+        <div class="pp-dots" id="pp-dots"></div>
+        <div class="pp-foul-row">
+          <button id="pp-foul-add">+ Foul</button>
+          <button id="pp-foul-sub">− Foul</button>
+        </div>
+      </div>
+    </div>
+    <div class="popup-foot">
+      <button id="popup-player-close" class="primary">Done</button>
+    </div>
+  </div>
+</div>
+
 <!-- ======================================================= RECALL GAME CLOCK -->
 <div class="popup-backdrop" id="popup-recall-clock">
   <div class="popup">
@@ -784,6 +961,46 @@ $("poss-off").addEventListener("click",        () => Scoreboard.sendCommand("set
 $("poss-right").addEventListener("click",      () => Scoreboard.sendCommand("set_possession", { direction: "right" }));
 
 // -------- Apply state snapshot --------
+// -------- Player grid --------
+function renderPlayerGrid(side, players) {
+  const grid = $(`${side}-players`);
+  const count = Math.min(players.length, 12);
+
+  // Rebuild DOM only when player count changes to avoid disrupting touch
+  if (+grid.dataset.count !== count) {
+    grid.innerHTML = "";
+    for (let i = 0; i < count; i++) {
+      const btn = document.createElement("button");
+      btn.className = "player-tile";
+      btn.dataset.team = side;
+      btn.dataset.idx  = i;
+      btn.innerHTML =
+        `<span class="player-pts"></span>` +
+        `<span class="player-num"></span>` +
+        `<div class="player-fouls">` +
+          [...Array(5)].map(() => `<span class="player-foul-dot"></span>`).join("") +
+        `</div>`;
+      btn.addEventListener("click", () => openPlayerPopup(side, i));
+      grid.appendChild(btn);
+    }
+    grid.dataset.count = count;
+  }
+
+  // Patch each tile in place
+  players.slice(0, 12).forEach((p, i) => {
+    const tile = grid.children[i];
+    if (!tile) return;
+    const played = p.played !== false;
+    tile.classList.toggle("played", played);
+    tile.querySelector(".player-pts").textContent = p.points ?? 0;
+    tile.querySelector(".player-num").textContent = p.number || String(i + 1);
+    tile.querySelectorAll(".player-foul-dot").forEach((d, di) => {
+      d.classList.toggle("on",    di < p.fouls);
+      d.classList.toggle("fifth", di === 4 && p.fouls >= 5);
+    });
+  });
+}
+
 // Update a run-pill: cls = "on" | "warn" | "" (muted/off)
 function setPill(el, cls, label) {
   el.classList.toggle("on",   cls === "on");
@@ -820,7 +1037,14 @@ function applyState(s) {
       }
       tosEl.dataset.sig = sig;
     }
+
+    // Player grid
+    renderPlayerGrid(side, t.players || []);
   }
+
+  // Live-refresh open popups
+  if ($("popup-player").classList.contains("open"))       refreshPlayerPopup();
+  if ($("popup-period-reset").classList.contains("open")) refreshResetPopup();
 
   // Period
   $("period-display").textContent = s.period_short || String(s.period_indicator || "—");
@@ -1117,6 +1341,156 @@ window.addEventListener("pointerup",              sirenEnd);
 window.addEventListener("blur",                   sirenEnd);
 document.addEventListener("visibilitychange", () => { if (document.hidden) sirenEnd(); });
 window.addEventListener("beforeunload",       () => { if (sirenOn) Scoreboard.sendCommand("siren_off"); });
+
+// -------- Period reset popup --------
+function refreshResetPopup() {
+  const s = Scoreboard.getState();
+  if (!s) return;
+  const mode = s.timeout_mode || "remaining";
+  const mx   = s.timeout_max  || 3;
+  $("pr-mode-rem").classList.toggle("primary", mode === "remaining");
+  $("pr-mode-rem").classList.toggle("ghost",   mode !== "remaining");
+  $("pr-mode-taken").classList.toggle("primary", mode === "taken");
+  $("pr-mode-taken").classList.toggle("ghost",   mode !== "taken");
+  $("pr-max-2").classList.toggle("primary", mx === 2);
+  $("pr-max-2").classList.toggle("ghost",   mx !== 2);
+  $("pr-max-3").classList.toggle("primary", mx === 3);
+  $("pr-max-3").classList.toggle("ghost",   mx !== 3);
+}
+
+$("btn-period-settings").addEventListener("click", () => {
+  refreshResetPopup();
+  openPopup("popup-period-reset");
+});
+["popup-pr-x", "popup-pr-close"].forEach(id =>
+  $(id).addEventListener("click", () => closePopup("popup-period-reset")));
+
+$("pr-reset-timeouts").addEventListener("click", () => Scoreboard.sendCommand("reset_timeouts"));
+$("pr-reset-fouls").addEventListener("click",    () => Scoreboard.sendCommand("reset_team_fouls"));
+$("pr-mode-rem").addEventListener("click",       () => Scoreboard.sendCommand("set_timeout_settings", { mode: "remaining" }));
+$("pr-mode-taken").addEventListener("click",     () => Scoreboard.sendCommand("set_timeout_settings", { mode: "taken" }));
+$("pr-max-2").addEventListener("click",          () => Scoreboard.sendCommand("set_timeout_settings", { max_count: 2 }));
+$("pr-max-3").addEventListener("click",          () => Scoreboard.sendCommand("set_timeout_settings", { max_count: 3 }));
+
+// Hold-to-reset (full game reset — 5 s hold)
+const PR_HOLD_MS = 5000;
+let prHoldStart = 0, prHoldTimer = null, prHoldFrame = null;
+
+function prSetProgress(p) {
+  $("pr-reset-hold").style.setProperty("--hold", `${Math.max(0, Math.min(1, p)) * 100}%`);
+}
+function prCancelHold() {
+  clearTimeout(prHoldTimer); cancelAnimationFrame(prHoldFrame);
+  prHoldStart = prHoldTimer = prHoldFrame = 0;
+  prSetProgress(0);
+  $("pr-reset-hold").querySelector("span").textContent = "Hold 5s to reset everything";
+  $("pr-reset-hint").textContent = "Resets scores, fouls, timeouts, rosters, clocks and period.";
+}
+function prTickHold() {
+  if (!prHoldStart) return;
+  const elapsed = performance.now() - prHoldStart;
+  prSetProgress(elapsed / PR_HOLD_MS);
+  $("pr-reset-hint").textContent = `Keep holding… ${((PR_HOLD_MS - elapsed) / 1000).toFixed(1)}s`;
+  prHoldFrame = requestAnimationFrame(prTickHold);
+}
+function prCompleteHold() {
+  prHoldStart = prHoldFrame = prHoldTimer = 0;
+  prSetProgress(1);
+  $("pr-reset-hold").querySelector("span").textContent = "Resetting…";
+  Scoreboard.sendCommand("reset_game");
+  setTimeout(() => { closePopup("popup-period-reset"); prCancelHold(); }, 400);
+}
+
+$("pr-reset-hold").addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  $("pr-reset-hold").setPointerCapture(e.pointerId);
+  prCancelHold();
+  prHoldStart = performance.now();
+  prHoldTimer = setTimeout(prCompleteHold, PR_HOLD_MS);
+  prTickHold();
+});
+["pointerup", "pointercancel", "pointerleave"].forEach(ev =>
+  $("pr-reset-hold").addEventListener(ev, () => { if (prHoldStart) prCancelHold(); }));
+
+// -------- Player popup --------
+let ppTeam = null, ppIdx = null;
+
+function openPlayerPopup(team, idx) {
+  ppTeam = team;
+  ppIdx  = idx;
+  refreshPlayerPopup();
+  openPopup("popup-player");
+}
+
+function refreshPlayerPopup() {
+  const s = Scoreboard.getState();
+  if (!s || ppTeam === null) return;
+  const p = (s[ppTeam].players || [])[ppIdx];
+  if (!p) return;
+
+  const played = p.played !== false;
+  $("pp-title").textContent =
+    (p.number ? `#${p.number}` : `Player ${ppIdx + 1}`) +
+    (p.name   ? ` — ${p.name}` : "");
+
+  if (document.activeElement !== $("pp-number")) $("pp-number").value = p.number || "";
+  if (document.activeElement !== $("pp-name"))   $("pp-name").value   = p.name   || "";
+
+  $("pp-played").textContent = played ? "On court" : "On bench";
+  $("pp-played").classList.toggle("primary", played);
+  $("pp-played").classList.toggle("ghost",   !played);
+
+  $("pp-pts-count").textContent   = p.points;
+  $("pp-fouls-count").textContent = p.fouls;
+
+  const dotsEl = $("pp-dots");
+  dotsEl.innerHTML = "";
+  for (let i = 0; i < 5; i++) {
+    const d = document.createElement("span");
+    d.className = "pp-dot" +
+      (i < p.fouls ? " on" : "") +
+      (i === 4 && p.fouls >= 5 ? " fifth" : "");
+    dotsEl.appendChild(d);
+  }
+}
+
+["popup-player-x", "popup-player-close"].forEach(id =>
+  $(id).addEventListener("click", () => closePopup("popup-player")));
+
+$("pp-played").addEventListener("click", () => {
+  const s = Scoreboard.getState();
+  if (!s || ppTeam === null) return;
+  const p = (s[ppTeam].players || [])[ppIdx];
+  Scoreboard.sendCommand("set_player_played",
+    { team: ppTeam, player_index: ppIdx, on: p && p.played === false });
+});
+
+document.querySelectorAll("[data-pp-pts]").forEach(btn =>
+  btn.addEventListener("click", () => {
+    if (ppTeam === null) return;
+    Scoreboard.sendCommand("add_player_points",
+      { team: ppTeam, player_index: ppIdx, points: +btn.dataset.ppPts });
+  }));
+
+$("pp-foul-add").addEventListener("click", () => {
+  if (ppTeam === null) return;
+  Scoreboard.sendCommand("add_player_foul", { team: ppTeam, player_index: ppIdx });
+});
+$("pp-foul-sub").addEventListener("click", () => {
+  if (ppTeam === null) return;
+  Scoreboard.sendCommand("subtract_player_foul", { team: ppTeam, player_index: ppIdx });
+});
+
+$("pp-number").addEventListener("change", () => {
+  if (ppTeam === null) return;
+  Scoreboard.sendCommand("set_player",
+    { team: ppTeam, player_index: ppIdx, number: $("pp-number").value });
+});
+$("pp-name").addEventListener("change", () => {
+  if (ppTeam === null) return;
+  Scoreboard.sendCommand("set_player",
+    { team: ppTeam, player_index: ppIdx, name: $("pp-name").value });
+});
 
 // -------- Recall --------
 let gameRecallMs = null;   // game clock value when shot clock last expired
