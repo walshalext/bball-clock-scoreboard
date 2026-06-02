@@ -207,103 +207,116 @@
 
   <!-- ======================================================= HOME -->
   <div class="team-col" id="home-col">
-    <div class="team-name" id="home-name">HOME</div>
 
-    <div class="score-display" id="home-score">0</div>
-
-    <div class="score-btns">
-      <button class="warn" data-team="home" data-pts="1">+1</button>
-      <button class="warn" data-team="home" data-pts="2">+2</button>
-      <button class="warn" data-team="home" data-pts="3">+3</button>
-      <button         data-team="home" data-pts="-1">−1</button>
-    </div>
-
-    <div class="ctrl-row">
-      <div class="stat-box" id="home-fouls-box">
-        <span class="stat-num" id="home-fouls">0</span>
-        <span class="stat-lbl" id="home-fouls-lbl">Fouls</span>
+    <div class="card score-card">
+      <h2 class="team-name" id="home-name">HOME</h2>
+      <div class="score-display" id="home-score">0</div>
+      <div class="score-btns">
+        <button class="warn" data-team="home" data-pts="1">+1</button>
+        <button class="warn" data-team="home" data-pts="2">+2</button>
+        <button class="warn" data-team="home" data-pts="3">+3</button>
+        <button         data-team="home" data-pts="-1">−1</button>
       </div>
-      <button data-team="home" data-act="foul-add">+F</button>
-      <button data-team="home" data-act="foul-sub">−F</button>
-      <button data-team="home" data-act="bonus-toggle" id="home-bonus-btn" class="ghost">Bonus</button>
     </div>
 
-    <div class="ctrl-row">
-      <div class="stat-box">
-        <div class="tos" id="home-tos"></div>
-        <span class="stat-lbl">T/O</span>
+    <div class="card">
+      <div class="ctrl-row">
+        <div class="stat-box" id="home-fouls-box">
+          <span class="stat-num" id="home-fouls">0</span>
+          <span class="stat-lbl" id="home-fouls-lbl">Fouls</span>
+        </div>
+        <button data-team="home" data-act="foul-add">+F</button>
+        <button data-team="home" data-act="foul-sub">−F</button>
+        <button data-team="home" data-act="bonus-toggle" id="home-bonus-btn" class="ghost">Bonus</button>
       </div>
-      <button data-team="home" data-act="to-add">+TO</button>
-      <button data-team="home" data-act="to-sub">−TO</button>
+      <div class="ctrl-row">
+        <div class="stat-box">
+          <div class="tos" id="home-tos"></div>
+          <span class="stat-lbl">T/O</span>
+        </div>
+        <button data-team="home" data-act="to-add">+TO</button>
+        <button data-team="home" data-act="to-sub">−TO</button>
+      </div>
     </div>
+
   </div>
 
   <!-- ======================================================= CENTRE -->
   <div class="centre-col">
 
-    <div class="period-row">
-      <button id="btn-period-down">−</button>
-      <div class="period-display" id="period-display">PRE</div>
-      <button id="btn-period-up">+</button>
-    </div>
-
-    <div class="game-clock" id="game-clock">10:00</div>
-
-    <div class="game-start-stop">
-      <button id="btn-start" class="start" data-action="start_game">▶ START <span class="key-hint"></span></button>
-      <button id="btn-stop"  class="stop"  data-action="stop_game" >■ STOP <span class="key-hint"></span></button>
-    </div>
-
-    <div class="shot-row">
-      <div class="shot-display" id="shot-display">24</div>
-      <div class="shot-btns">
-        <button id="btn-sc-start" class="start"    data-action="sc_enable"  >▶ SC <span class="key-hint"></span></button>
-        <button id="btn-sc-stop"  class="stop"     data-action="sc_disable" >■ SC <span class="key-hint"></span></button>
-        <button id="btn-sc-24"                     data-action="sc_reset_24">24 <span class="key-hint"></span></button>
-        <button id="btn-sc-14"                     data-action="sc_reset_14">14 <span class="key-hint"></span></button>
-        <button id="btn-sc-hide"  class="hide-btn" data-action="sc_hide"    >HIDE <span class="key-hint"></span></button>
+    <div class="card clock-card">
+      <h2>Game clock</h2>
+      <div class="period-row">
+        <button id="btn-period-down">−</button>
+        <div class="period-display" id="period-display">PRE</div>
+        <button id="btn-period-up">+</button>
+      </div>
+      <div class="game-clock" id="game-clock">10:00</div>
+      <div class="game-start-stop">
+        <button id="btn-start" class="start" data-action="start_game">▶ START <span class="key-hint"></span></button>
+        <button id="btn-stop"  class="stop"  data-action="stop_game" >■ STOP <span class="key-hint"></span></button>
       </div>
     </div>
 
-    <div class="poss-row">
-      <button id="poss-left">◀</button>
-      <button id="poss-off">— OFF —</button>
-      <button id="poss-right">▶</button>
+    <div class="card">
+      <h2>Shot clock</h2>
+      <div class="shot-row">
+        <div class="shot-display" id="shot-display">24</div>
+        <div class="shot-btns">
+          <button id="btn-sc-start" class="start"    data-action="sc_enable"  >▶ SC <span class="key-hint"></span></button>
+          <button id="btn-sc-stop"  class="stop"     data-action="sc_disable" >■ SC <span class="key-hint"></span></button>
+          <button id="btn-sc-24"                     data-action="sc_reset_24">24 <span class="key-hint"></span></button>
+          <button id="btn-sc-14"                     data-action="sc_reset_14">14 <span class="key-hint"></span></button>
+          <button id="btn-sc-hide"  class="hide-btn" data-action="sc_hide"    >HIDE <span class="key-hint"></span></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Possession</h2>
+      <div class="poss-row">
+        <button id="poss-left">◀</button>
+        <button id="poss-off">— OFF —</button>
+        <button id="poss-right">▶</button>
+      </div>
     </div>
 
   </div>
 
   <!-- ======================================================= AWAY -->
   <div class="team-col" id="away-col">
-    <div class="team-name" id="away-name">AWAY</div>
 
-    <div class="score-display" id="away-score">0</div>
-
-    <div class="score-btns">
-      <button class="warn" data-team="away" data-pts="1">+1</button>
-      <button class="warn" data-team="away" data-pts="2">+2</button>
-      <button class="warn" data-team="away" data-pts="3">+3</button>
-      <button         data-team="away" data-pts="-1">−1</button>
-    </div>
-
-    <div class="ctrl-row">
-      <div class="stat-box" id="away-fouls-box">
-        <span class="stat-num" id="away-fouls">0</span>
-        <span class="stat-lbl" id="away-fouls-lbl">Fouls</span>
+    <div class="card score-card">
+      <h2 class="team-name" id="away-name">AWAY</h2>
+      <div class="score-display" id="away-score">0</div>
+      <div class="score-btns">
+        <button class="warn" data-team="away" data-pts="1">+1</button>
+        <button class="warn" data-team="away" data-pts="2">+2</button>
+        <button class="warn" data-team="away" data-pts="3">+3</button>
+        <button         data-team="away" data-pts="-1">−1</button>
       </div>
-      <button data-team="away" data-act="foul-add">+F</button>
-      <button data-team="away" data-act="foul-sub">−F</button>
-      <button data-team="away" data-act="bonus-toggle" id="away-bonus-btn" class="ghost">Bonus</button>
     </div>
 
-    <div class="ctrl-row">
-      <div class="stat-box">
-        <div class="tos" id="away-tos"></div>
-        <span class="stat-lbl">T/O</span>
+    <div class="card">
+      <div class="ctrl-row">
+        <div class="stat-box" id="away-fouls-box">
+          <span class="stat-num" id="away-fouls">0</span>
+          <span class="stat-lbl" id="away-fouls-lbl">Fouls</span>
+        </div>
+        <button data-team="away" data-act="foul-add">+F</button>
+        <button data-team="away" data-act="foul-sub">−F</button>
+        <button data-team="away" data-act="bonus-toggle" id="away-bonus-btn" class="ghost">Bonus</button>
       </div>
-      <button data-team="away" data-act="to-add">+TO</button>
-      <button data-team="away" data-act="to-sub">−TO</button>
+      <div class="ctrl-row">
+        <div class="stat-box">
+          <div class="tos" id="away-tos"></div>
+          <span class="stat-lbl">T/O</span>
+        </div>
+        <button data-team="away" data-act="to-add">+TO</button>
+        <button data-team="away" data-act="to-sub">−TO</button>
+      </div>
     </div>
+
   </div>
 
 </div><!-- .board -->
